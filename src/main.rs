@@ -34,7 +34,7 @@ fn main() -> Result<()> {
     let listening_port = match std::env::args().nth(1) {
         Some(arg) => arg,
         None => {
-            println!("Please specify local IP endpoint to listen on!");
+            println!("Please specify local port to listen on!");
             exit(1);
         }
     };
@@ -140,10 +140,4 @@ fn handle_client(mut stream: TcpStream) {
     }
 
     println!("[{} <-> {}] Connection ended", addr, target);
-
-    // get host to connect to
-
-    // connect to that host - upon FAILURE, try next one
-
-    // send buffer to that host
 }
