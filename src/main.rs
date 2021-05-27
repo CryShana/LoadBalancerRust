@@ -11,6 +11,8 @@ use threadpool::ThreadPool;
 mod balancer;
 use balancer::LoadBalancer;
 
+const SLEEP_TIME: Duration = Duration::from_millis(5);
+
 fn main() -> Result<()> {
     // - file that contains list of hosts in format [IP]:[Port]
     // - load balancing algorithm is also given as an argument - default is round robin
@@ -69,7 +71,7 @@ fn main() -> Result<()> {
             break;
         }
 
-        thread::sleep(Duration::from_millis(1));
+        thread::sleep(SLEEP_TIME);
     }
 
     Ok(())
@@ -147,7 +149,7 @@ fn handle_client(mut stream: TcpStream) {
             break;
         }
 
-        thread::sleep(Duration::from_millis(1));
+        thread::sleep(SLEEP_TIME);
     }
 
     stream.shutdown(Shutdown::Both).expect("Failed to shutdown client TCP stream");
