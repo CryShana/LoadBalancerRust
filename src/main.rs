@@ -108,7 +108,7 @@ fn handle_client(mut stream: TcpStream) {
     stream.set_nonblocking(true).unwrap();
 
     let mut buffer = [0; 4096];
-    loop {
+    loop {  
         // READ FROM CLIENT
         let read: i32 = match stream.read(&mut buffer) {
             Ok(r) => r as i32,
@@ -146,6 +146,8 @@ fn handle_client(mut stream: TcpStream) {
             println!("[{} <-> {}] Zero buffer from server", addr, target);
             break;
         }
+
+        thread::sleep(Duration::from_millis(1));
     }
 
     println!("[{} <-> {}] Connection ended", addr, target);
