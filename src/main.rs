@@ -1,5 +1,5 @@
 use std::io::{prelude::*, Result};
-use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::process::exit;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -150,5 +150,8 @@ fn handle_client(mut stream: TcpStream) {
         thread::sleep(Duration::from_millis(1));
     }
 
+    stream.shutdown(Shutdown::Both).expect("Failed to shutdown client TCP stream");
+    str.shutdown(Shutdown::Both).expect("Failed to shutdown server TCP stream");
+       
     println!("[{} <-> {}] Connection ended", addr, target);
 }
