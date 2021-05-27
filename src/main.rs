@@ -1,9 +1,10 @@
-use std::fmt::format;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
-use std::io::{Result, prelude::*};
+use std::io::{prelude::*, Result};
+use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::process::exit;
 use std::str::FromStr;
-use std::time::Duration;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::time::{self, Duration};
 use std::{env, thread};
 use threadpool::ThreadPool;
 
@@ -18,17 +19,16 @@ fn main() -> Result<()> {
     // algorithm
     // - handle clients by IP / or by connection / or by time period?
     // - clients are assigned hosts as they connect and stay with those hosts (assigned host is determined by the method used)
-    
+
     // IDEA: save new clients to a pre-allocated array OR list --- multiple threads are then spawned and handle clients in this array (because it's non-blocking, can jsut go through many of them)
     // - Need a way to remove inactive clients --> timeouts on no receive or sending data?
-    
-    /*
-    ctrlc::set_handler(|| {
-        println!("Signal received");
-        
 
-    }).expect("Failed to set Ctrl+C handler!");
-    */
+    let should_cancel = Arc::new(Mutex::new(false));
+    let cancel = Arc::clone(&should_cancel);
+    ctrlc::set_handler(move || {
+        *cancel.lock().unwrap() = true;
+    })
+    .expect("Failed to set Ctrl+C handler!");
 
     // get endpoint
     let listening_port = match std::env::args().nth(1) {
@@ -38,13 +38,15 @@ fn main() -> Result<()> {
             exit(1);
         }
     };
-    
+
     let pool = ThreadPool::new(4);
     let addr = format!("0.0.0.0:{}", listening_port);
 
     let listener: TcpListener = TcpListener::bind(addr).expect("Failed to bind to port!");
-    listener.set_nonblocking(true).expect("Failed to put listener into non-blocking mode!");
-    
+    listener
+        .set_nonblocking(true)
+        .expect("Failed to put listener into non-blocking mode!");
+
     // accept connections and process them serially
     for stream in listener.incoming() {
         match stream {
@@ -53,16 +55,21 @@ fn main() -> Result<()> {
                 pool.execute(|| {
                     handle_client(str);
                 });
-            },
+            }
             // because we are not blocking (to exit gracefully), we need to ignore non-blocking errors
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                continue;
-            },
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
             // handle actual errors here
             Err(err) => {
                 println!("Failed to accept connection! {}", err.to_string());
             }
         }
+
+        if *should_cancel.lock().unwrap() == true {
+            println!("Listening stopped");
+            break;
+        }
+
+        thread::sleep(Duration::from_millis(1));
     }
 
     Ok(())
@@ -86,7 +93,12 @@ fn handle_client(mut stream: TcpStream) {
             return;
         }
         Err(err) => {
-            println!("[{} <-> {}] Error while trying to connect to server: {}", addr, target, err.to_string());
+            println!(
+                "[{} <-> {}] Error while trying to connect to server: {}",
+                addr,
+                target,
+                err.to_string()
+            );
             return;
         }
     };
@@ -108,12 +120,10 @@ fn handle_client(mut stream: TcpStream) {
             }
         };
 
-   
         // WRITE TO SERVER
         if read > 0 {
             str.write(&buffer[..(read as usize)]).unwrap();
-        }
-        else if read == 0 {
+        } else if read == 0 {
             println!("[{} <-> {}] Zero buffer from client", addr, target);
             break;
         }
@@ -132,8 +142,7 @@ fn handle_client(mut stream: TcpStream) {
         // WRITE TO CLIENT
         if reads > 0 {
             stream.write(&buffer[..(reads as usize)]).unwrap();
-        }
-        else if reads == 0 {
+        } else if reads == 0 {
             println!("[{} <-> {}] Zero buffer from server", addr, target);
             break;
         }
