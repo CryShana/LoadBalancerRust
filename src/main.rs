@@ -1,5 +1,5 @@
 use std::io::{prelude::*, Result};
-use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::process::exit;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -11,7 +11,11 @@ use threadpool::ThreadPool;
 mod balancer;
 use balancer::LoadBalancer;
 
+mod client;
+use client::TcpClient;
+
 const SLEEP_TIME: Duration = Duration::from_millis(5);
+const CONNECTION_TIMEOUT: Duration = Duration::from_millis(1500);
 
 fn main() -> Result<()> {
     // - file that contains list of hosts in format [IP]:[Port]
@@ -31,7 +35,7 @@ fn main() -> Result<()> {
         *cancel.lock().unwrap() = true;
     })
     .expect("Failed to set Ctrl+C handler!");
-
+    
     // get endpoint
     let listening_port = match std::env::args().nth(1) {
         Some(arg) => arg,
@@ -77,83 +81,20 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn handle_client(mut stream: TcpStream) {
-    let addr = stream.peer_addr().unwrap();
-    println!("Connected from {}", addr.to_string());
-
+fn handle_client(stream: TcpStream) {
+    
     let target_port: u16 = 5000;
     let target_addr: IpAddr = IpAddr::from_str("127.0.0.1").unwrap();
     let target_socket = SocketAddr::new(target_addr, target_port);
-    let target = format!("{}:{}", target_addr, target_port);
 
-    // establish connection to target
-    let mut str = match TcpStream::connect_timeout(&target_socket, Duration::from_millis(1000)) {
-        Ok(stream) => stream,
-        Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
-            // timed out
-            println!("[{} <-> {}] Timed out connection to server", addr, target);
-            return;
-        }
-        Err(err) => {
-            println!(
-                "[{} <-> {}] Error while trying to connect to server: {}",
-                addr,
-                target,
-                err.to_string()
-            );
-            return;
-        }
-    };
-
-    // make sure it's nonblocking
-    str.set_nonblocking(true).unwrap();
-    stream.set_nonblocking(true).unwrap();
-
-    let mut buffer = [0; 4096];
+    let mut client = TcpClient::new(stream);
+    client.connect_to_target(target_socket, CONNECTION_TIMEOUT);
+    
     loop {  
-        // READ FROM CLIENT
-        let read: i32 = match stream.read(&mut buffer) {
-            Ok(r) => r as i32,
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => -1,
-            Err(err) => {
-                // error with connection
-                println!("[{} <-> {}] Connection to client failed!", addr, target);
-                break;
-            }
-        };
-
-        // WRITE TO SERVER
-        if read > 0 {
-            str.write(&buffer[..(read as usize)]).unwrap();
-        } else if read == 0 {
-            println!("[{} <-> {}] Zero buffer from client", addr, target);
-            break;
-        }
-
-        // READ FROM SERVER
-        let reads: i32 = match str.read(&mut buffer) {
-            Ok(r) => r as i32,
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => -1,
-            Err(err) => {
-                // error with connection
-                println!("[{} <-> {}] Connection to server failed!", addr, target);
-                break;
-            }
-        };
-
-        // WRITE TO CLIENT
-        if reads > 0 {
-            stream.write(&buffer[..(reads as usize)]).unwrap();
-        } else if reads == 0 {
-            println!("[{} <-> {}] Zero buffer from server", addr, target);
-            break;
-        }
-
+        
+        client.process();
         thread::sleep(SLEEP_TIME);
-    }
 
-    stream.shutdown(Shutdown::Both).expect("Failed to shutdown client TCP stream");
-    str.shutdown(Shutdown::Both).expect("Failed to shutdown server TCP stream");
-       
-    println!("[{} <-> {}] Connection ended", addr, target);
+        break;
+    }
 }
