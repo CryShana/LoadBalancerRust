@@ -60,58 +60,61 @@ impl LoadBalancer {
             let c = Arc::clone(&self.clients);
             let s = Arc::clone(&self.stopped);
 
+            // SPAWN PROCESSORS
             thread::spawn(move || loop {
                 thread::sleep(SLEEP_TIME);
 
-                let clients = &*c.read().unwrap();
-                let length = clients.len() as u32;
-                let mut capacity = length / th;
+                // HANDLE CLIENTS
+                {
+                    let clients = &*c.read().unwrap();
+                    let length = clients.len() as u32;
+                    let mut capacity = length / th;
 
-                // if there are less clients than threads, we can let the first thread handle all of them
-                if length < th {
-                    if id == 0 {
-                        // first thread will take on all of them
-                        capacity = length;
-                    } else {
-                        // other threads are ignored for now
-                        continue;
-                    }
-                }
-
-                // every thread starts at a specified index and handles [capacity] clients
-                let starting_index = id * capacity;
-                let end_index = starting_index + capacity; // exclusive
-
-                // handle clients
-                for i in starting_index..end_index {
-                    let mut client = match clients.get(i as usize) {
-                        Some(client) => client.write().unwrap(),
-                        None => {
-                            println!("[Thread {}] Cancelled early because collection changed", id);
-                            break;
+                    // if there are less clients than threads, we can let the first thread handle all of them
+                    if length < th {
+                        if id == 0 {
+                            // first thread will take on all of them
+                            capacity = length;
+                        } else {
+                            // other threads are ignored for now
+                            continue;
                         }
-                    };
-
-                    // ignore clients that are no longer connected
-                    if client.is_client_connected() == false {
-                        continue;
                     }
 
-                    // handle client
-                    if client.is_connected() {
-                        let success = client.process();
-                        if success == false {
-                            // connection to either server or client has failed
+                    // every thread starts at a specified index and handles [capacity] clients
+                    let starting_index = id * capacity;
+                    let end_index = starting_index + capacity; // exclusive
 
-                            if client.is_client_connected() == false {
-                                // client no longer connected, we should remove it from vector!
-                                // TODO
-                                
+                    // handle clients
+                    for i in starting_index..end_index {
+                        let mut client = match clients.get(i as usize) {
+                            Some(client) => client.write().unwrap(),
+                            None => {
+                                println!(
+                                    "[Thread {}] Cancelled early because collection changed",
+                                    id
+                                );
+                                break;
                             }
+                        };
+
+                        // ignore clients that are no longer connected
+                        if client.is_client_connected() == false {
+                            continue;
                         }
-                    } else {
-                        println!("[Thread {}] Connecting client", id);
-                        client.connect_to_target(target_socket, CONNECTION_TIMEOUT);
+
+                        // handle client
+                        if client.is_connected() {
+                            let success = client.process();
+                            if success == false {
+                                // connection to either server or client has failed
+
+                                // removal from list is handled later
+                            }
+                        } else {
+                            println!("[Thread {}] Connecting client", id);
+                            client.connect_to_target(target_socket, CONNECTION_TIMEOUT);
+                        }
                     }
                 }
 
@@ -122,5 +125,37 @@ impl LoadBalancer {
                 }
             });
         }
+
+        // SPAWN CLEANER - will clean disconnected clients from vector
+        let c = Arc::clone(&self.clients);
+        let s = Arc::clone(&self.stopped);
+        thread::spawn(move || loop {
+            loop {
+                thread::sleep(Duration::from_secs(2));
+
+                let mut clients = c.write().unwrap();
+                let mut len = clients.len();
+                let mut i = 0;
+                
+                loop {
+                    if i >= len {
+                        break;
+                    }
+
+                    if clients[i].read().unwrap().is_client_connected() == false {
+                        clients.remove(i);
+                        len = len - 1;
+                        continue;
+                    }
+
+                    i = i + 1;
+                }
+
+                let stopped = *s.read().unwrap();
+                if stopped == true {
+                    break;
+                }
+            }
+        });
     }
 }
