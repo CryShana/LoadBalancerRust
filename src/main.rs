@@ -9,10 +9,7 @@ use std::{env, thread};
 use threadpool::ThreadPool;
 
 mod balancer;
-use balancer::LoadBalancer;
-
-mod client;
-use client::TcpClient;
+use balancer::{LoadBalancer, TcpClient};
 
 const SLEEP_TIME: Duration = Duration::from_millis(5);
 const CONNECTION_TIMEOUT: Duration = Duration::from_millis(1500);
