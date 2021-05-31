@@ -11,6 +11,7 @@ pub struct TcpClient {
     target: Option<SocketAddr>,
     target_stream: Option<TcpStream>,
     is_connected: bool,
+    is_client_connected: bool,
     pub address: SocketAddr,
 }
 
@@ -28,7 +29,16 @@ impl TcpClient {
             target_stream: None,
             address: addr,
             is_connected: false,
+            is_client_connected: true,
         }
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.is_connected
+    }
+
+    pub fn is_client_connected(&self) -> bool {
+        self.is_client_connected
     }
 
     pub fn connect_to_target(&mut self, target: SocketAddr, timeout: Duration) {
@@ -64,11 +74,14 @@ impl TcpClient {
         println!("[{} <-> {}] Connection established", self.address, target);
     }
 
-    pub fn process(&mut self) {
+    /**
+        Reads from client and forwards it to server. Returns [false] when connection to either client or server fails.
+    */
+    pub fn process(&mut self) -> bool {
         // do not process if target host is not set/connected
         let target = match self.target {
             Some(t) => t,
-            None => return,
+            None => return true,
         };
 
         let mut str = self.target_stream.as_ref().unwrap();
@@ -83,7 +96,9 @@ impl TcpClient {
                     "[{} <-> {}] Connection to client failed!",
                     self.address, target
                 );
-                return;
+
+                self.close_connection();
+                return false;
             }
         };
 
@@ -92,7 +107,9 @@ impl TcpClient {
             str.write(&self.buffer[..(read as usize)]).unwrap();
         } else if read == 0 {
             println!("[{} <-> {}] Zero buffer from client", self.address, target);
-            return;
+
+            self.close_connection();
+            return false;
         }
 
         // READ FROM SERVER
@@ -105,7 +122,9 @@ impl TcpClient {
                     "[{} <-> {}] Connection to server failed!",
                     self.address, target
                 );
-                return;
+
+                self.close_connection_to_target();
+                return false;
             }
         };
 
@@ -114,8 +133,11 @@ impl TcpClient {
             self.stream.write(&self.buffer[..(reads as usize)]).unwrap();
         } else if reads == 0 {
             println!("[{} <-> {}] Zero buffer from server", self.address, target);
-            return;
+            self.close_connection_to_target();
+            return false;
         }
+
+        return true;
     }
 
     fn close_connection_to_target(&mut self) {
@@ -127,7 +149,27 @@ impl TcpClient {
             self.is_connected = false;
 
             println!(
-                "[{} <-> {}] Connection ended",
+                "[{} <-> {}] Connection to target ended",
+                self.address,
+                self.target.unwrap()
+            );
+        }
+    }
+
+    fn close_connection(&mut self) {
+        if self.is_client_connected {
+
+            self.stream
+                .shutdown(Shutdown::Both)
+                .expect("Failed to shutdown client TCP stream");
+
+            self.is_client_connected = false;
+
+            // also close connection to target if connected - there is no reason to stay connected if client is not
+            self.close_connection_to_target();
+
+            println!(
+                "[{} <-> {}] Connection to client ended",
                 self.address,
                 self.target.unwrap()
             );
@@ -137,14 +179,6 @@ impl TcpClient {
 
 impl Drop for TcpClient {
     fn drop(&mut self) {
-        self.stream
-            .shutdown(Shutdown::Both)
-            .expect("Failed to shutdown client TCP stream");
-
-        if self.is_connected {
-            self.close_connection_to_target();
-        } else {
-            println!("[{}] Connection ended", self.address);
-        }
+        self.close_connection();
     }
 }

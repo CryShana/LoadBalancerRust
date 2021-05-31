@@ -1,9 +1,8 @@
-use std::io::prelude::*;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::RwLock;
 use std::thread::Thread;
+use std::usize;
 use std::{
     net::{IpAddr, SocketAddr, TcpStream},
     thread,
@@ -16,7 +15,7 @@ const CONNECTION_TIMEOUT: Duration = Duration::from_millis(1500);
 const SLEEP_TIME: Duration = Duration::from_millis(5);
 
 pub struct LoadBalancer {
-    clients: Arc<RwLock<Vec<TcpClient>>>,
+    clients: Arc<RwLock<Vec<Arc<RwLock<TcpClient>>>>>,
     stopped: Arc<RwLock<bool>>,
     threads: u16,
     workers: Vec<Thread>,
@@ -38,46 +37,88 @@ impl LoadBalancer {
 
     pub fn add_client(&mut self, stream: TcpStream) {
         let client = TcpClient::new(stream);
-        self.clients.write().unwrap().push(client);
+        self.clients
+            .write()
+            .unwrap()
+            .push(Arc::new(RwLock::new(client)));
     }
 
     pub fn stop(&mut self) {
         *self.stopped.write().unwrap() = true;
     }
 
-    fn handle_client(mut client: TcpClient) {
-        let target_port: u16 = 5000;
+    fn spawn_workers(&mut self) {
+        let th = self.threads as u32;
+
+        // -------- REMOVE THIS LATER --------
+        let target_port: u16 = 8888;
         let target_addr: IpAddr = IpAddr::from_str("127.0.0.1").unwrap();
         let target_socket = SocketAddr::new(target_addr, target_port);
+        // -----------------------------------
 
-        client.connect_to_target(target_socket, CONNECTION_TIMEOUT);
-
-        loop {
-            client.process();
-            thread::sleep(SLEEP_TIME);
-
-            break;
-        }
-    }
-
-    fn spawn_workers(&mut self) {
-        for id in 0..self.threads {
+        for id in 0..th {
             let c = Arc::clone(&self.clients);
             let s = Arc::clone(&self.stopped);
-            let threads = self.threads;
 
-            thread::spawn(move || {
-                {
-                    let clients = &*c.read().unwrap();
+            thread::spawn(move || loop {
+                thread::sleep(SLEEP_TIME);
+
+                let clients = &*c.read().unwrap();
+                let length = clients.len() as u32;
+                let mut capacity = length / th;
+
+                // if there are less clients than threads, we can let the first thread handle all of them
+                if length < th {
+                    if id == 0 {
+                        // first thread will take on all of them
+                        capacity = length;
+                    } else {
+                        // other threads are ignored for now
+                        continue;
+                    }
                 }
 
-                println!("Thread ID -> {}", id);
+                // every thread starts at a specified index and handles [capacity] clients
+                let starting_index = id * capacity;
+                let end_index = starting_index + capacity; // exclusive
 
-                {
-                    let stopped = *s.read().unwrap();
-                    if stopped == true {
-                        return;
+                // handle clients
+                for i in starting_index..end_index {
+                    let mut client = match clients.get(i as usize) {
+                        Some(client) => client.write().unwrap(),
+                        None => {
+                            println!("[Thread {}] Cancelled early because collection changed", id);
+                            break;
+                        }
+                    };
+
+                    // ignore clients that are no longer connected
+                    if client.is_client_connected() == false {
+                        continue;
                     }
+
+                    // handle client
+                    if client.is_connected() {
+                        let success = client.process();
+                        if success == false {
+                            // connection to either server or client has failed
+
+                            if client.is_client_connected() == false {
+                                // client no longer connected, we should remove it from vector!
+                                // TODO
+                                
+                            }
+                        }
+                    } else {
+                        println!("[Thread {}] Connecting client", id);
+                        client.connect_to_target(target_socket, CONNECTION_TIMEOUT);
+                    }
+                }
+
+                // keep checking if balancer has been stopped
+                let stopped = *s.read().unwrap();
+                if stopped == true {
+                    break;
                 }
             });
         }

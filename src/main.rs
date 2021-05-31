@@ -13,7 +13,6 @@ use balancer::{LoadBalancer, TcpClient};
 
 const SLEEP_TIME: Duration = Duration::from_millis(5);
 
-
 fn main() -> Result<()> {
     // - file that contains list of hosts in format [IP]:[Port]
     // - load balancing algorithm is also given as an argument - default is round robin
@@ -34,7 +33,7 @@ fn main() -> Result<()> {
         *cancel.lock().unwrap() = true;
     })
     .expect("Failed to set Ctrl+C handler!");
-    
+
     // get endpoint
     let listening_port = match std::env::args().nth(1) {
         Some(arg) => arg,
@@ -67,6 +66,11 @@ fn main() -> Result<()> {
 
         if *should_cancel.lock().unwrap() == true {
             println!("Listening stopped");
+            balancer.stop();
+
+            // sleep a bit to allow all threads to exit gracefully
+            thread::sleep(SLEEP_TIME);
+
             break;
         }
 
@@ -75,4 +79,3 @@ fn main() -> Result<()> {
 
     Ok(())
 }
-
