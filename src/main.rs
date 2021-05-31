@@ -1,7 +1,7 @@
 use std::io::{prelude::*, Result};
 use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::process::exit;
-use std::str::FromStr;
+
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{self, Duration};
@@ -12,7 +12,7 @@ mod balancer;
 use balancer::{LoadBalancer, TcpClient};
 
 const SLEEP_TIME: Duration = Duration::from_millis(5);
-const CONNECTION_TIMEOUT: Duration = Duration::from_millis(1500);
+
 
 fn main() -> Result<()> {
     // - file that contains list of hosts in format [IP]:[Port]
@@ -25,6 +25,8 @@ fn main() -> Result<()> {
 
     // IDEA: save new clients to a pre-allocated array OR list --- multiple threads are then spawned and handle clients in this array (because it's non-blocking, can jsut go through many of them)
     // - Need a way to remove inactive clients --> timeouts on no receive or sending data?
+
+    let mut balancer = LoadBalancer::new(4);
 
     let should_cancel = Arc::new(Mutex::new(false));
     let cancel = Arc::clone(&should_cancel);
@@ -42,7 +44,6 @@ fn main() -> Result<()> {
         }
     };
 
-    let pool = ThreadPool::new(4);
     let addr = format!("0.0.0.0:{}", listening_port);
 
     let listener: TcpListener = TcpListener::bind(addr).expect("Failed to bind to port!");
@@ -54,10 +55,7 @@ fn main() -> Result<()> {
     for stream in listener.incoming() {
         match stream {
             Ok(str) => {
-                // handle client using the threadpool
-                pool.execute(|| {
-                    handle_client(str);
-                });
+                balancer.add_client(str);
             }
             // because we are not blocking (to exit gracefully), we need to ignore non-blocking errors
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
@@ -78,20 +76,3 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn handle_client(stream: TcpStream) {
-    
-    let target_port: u16 = 5000;
-    let target_addr: IpAddr = IpAddr::from_str("127.0.0.1").unwrap();
-    let target_socket = SocketAddr::new(target_addr, target_port);
-
-    let mut client = TcpClient::new(stream);
-    client.connect_to_target(target_socket, CONNECTION_TIMEOUT);
-    
-    loop {  
-        
-        client.process();
-        thread::sleep(SLEEP_TIME);
-
-        break;
-    }
-}
