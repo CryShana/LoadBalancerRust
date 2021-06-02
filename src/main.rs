@@ -8,7 +8,7 @@ use std::time::{self, Duration};
 use std::{env, thread};
 
 mod balancer;
-use balancer::{LoadBalancer, HostManager};
+use balancer::{HostManager, LoadBalancer};
 
 use crate::balancer::RoundRobin;
 
@@ -31,8 +31,8 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let round_robin = RoundRobin::new(host_manager);
-    let mut balancer = LoadBalancer::new(&round_robin, 4);
+    let mut round_robin = RoundRobin::new(host_manager);
+    let mut balancer = LoadBalancer::new(&mut round_robin, 4, true);
 
     let should_cancel = Arc::new(Mutex::new(false));
     let cancel = Arc::clone(&should_cancel);
@@ -58,7 +58,7 @@ fn main() -> Result<()> {
         .expect("Failed to put listener into non-blocking mode!");
 
     // accept connections and process them serially
-    println!("Started listening on port {}", listening_port);
+    println!("[Listener] Started listening on port {}", listening_port);
     for stream in listener.incoming() {
         match stream {
             Ok(str) => {

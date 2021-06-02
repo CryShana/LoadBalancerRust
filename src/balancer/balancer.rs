@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -17,15 +18,17 @@ const SLEEP_TIME: Duration = Duration::from_millis(5);
 pub struct LoadBalancer<'a> {
     clients: Arc<RwLock<Vec<Arc<RwLock<TcpClient>>>>>,
     stopped: Arc<RwLock<bool>>,
+    debug: Arc<RwLock<bool>>,
     threads: u16,
     balancing_algorithm: &'a dyn BalancingAlgorithm,
 }
 
 impl<'a> LoadBalancer<'a> {
-    pub fn new(balancing_algorithm: &'a dyn BalancingAlgorithm, threads: u16) -> Self {
+    pub fn new(balancing_algorithm: &'a dyn BalancingAlgorithm, threads: u16, debug: bool) -> Self {
         let mut b = LoadBalancer {
             clients: Arc::new(RwLock::new(vec![])),
             stopped: Arc::new(RwLock::new(false)),
+            debug: Arc::new(RwLock::new(debug)),
             threads,
             balancing_algorithm,
         };
@@ -59,6 +62,7 @@ impl<'a> LoadBalancer<'a> {
         for id in 0..th {
             let c = Arc::clone(&self.clients);
             let s = Arc::clone(&self.stopped);
+            let d = Arc::clone(&self.debug);
 
             // SPAWN PROCESSORS
             thread::spawn(move || loop {
@@ -94,10 +98,12 @@ impl<'a> LoadBalancer<'a> {
                         let mut client = match clients.get(i as usize) {
                             Some(client) => client.write().unwrap(),
                             None => {
-                                println!(
-                                    "[Thread {}] Cancelled early because collection changed",
-                                    id
-                                );
+                                if *d.read().unwrap() {
+                                    println!(
+                                        "[Thread {}] Cancelled early because collection changed",
+                                        id
+                                    );
+                                }
                                 break;
                             }
                         };
@@ -114,26 +120,36 @@ impl<'a> LoadBalancer<'a> {
                                 // connection to either server or client has failed
 
                                 // removal from list is handled later
-                                println!("[Thread {}] Connection ended ({})", id, client.address);
+                                if *d.read().unwrap() {
+                                    println!(
+                                        "[Thread {}] Connection ended ({})",
+                                        id, client.address
+                                    );
+                                }
                             }
                         } else {
-                            println!(
-                                "[Thread {}] Connecting client ({} -> {})",
-                                id, client.address, target_socket
-                            );
+                            if *d.read().unwrap() {
+                                println!(
+                                    "[Thread {}] Connecting client ({} -> {})",
+                                    id, client.address, target_socket
+                                );
+                            }
+
                             let success =
                                 client.connect_to_target(target_socket, CONNECTION_TIMEOUT);
 
-                            if success {
-                                println!(
-                                    "[Thread {}] Connected client ({} -> {})",
-                                    id, client.address, target_socket
-                                );
-                            } else {
-                                println!(
-                                    "[Thread {}] Failed to connect client ({} -> {})",
-                                    id, client.address, target_socket
-                                );
+                            if *d.read().unwrap() {
+                                if success {
+                                    println!(
+                                        "[Thread {}] Connected client ({} -> {})",
+                                        id, client.address, target_socket
+                                    );
+                                } else {
+                                    println!(
+                                        "[Thread {}] Failed to connect client ({} -> {})",
+                                        id, client.address, target_socket
+                                    );
+                                }
                             }
                         }
                     }
