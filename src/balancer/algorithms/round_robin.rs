@@ -25,7 +25,7 @@ impl BalancingAlgorithm for RoundRobin {
         let val = self.host_manager.hosts[self.current_host];
 
         self.current_host = self.current_host + 1;
-        if self.current_host > self.max_host {
+        if self.current_host >= self.max_host {
             self.current_host = 0
         }
 

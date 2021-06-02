@@ -1,11 +1,11 @@
-use std::io::{prelude::*, Result};
+use std::io::Result;
 use std::net::TcpListener;
 use std::process::exit;
 
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::{self, Duration};
-use std::{env, thread};
+use std::time::Duration;
+use std::thread;
 
 mod balancer;
 use balancer::{HostManager, LoadBalancer};
@@ -31,8 +31,8 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let mut round_robin = RoundRobin::new(host_manager);
-    let mut balancer = LoadBalancer::new(&mut round_robin, 4, true);
+    let round_robin = RoundRobin::new(host_manager);
+    let mut balancer = LoadBalancer::new(round_robin, 4, true);
 
     let should_cancel = Arc::new(Mutex::new(false));
     let cancel = Arc::clone(&should_cancel);
