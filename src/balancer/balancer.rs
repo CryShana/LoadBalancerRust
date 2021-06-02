@@ -1,6 +1,6 @@
-use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::RwLock;
 use std::usize;
 use std::{
@@ -11,26 +11,27 @@ use std::{
 };
 
 use super::BalancingAlgorithm;
+use super::RoundRobin;
 use super::TcpClient;
 const CONNECTION_TIMEOUT: Duration = Duration::from_millis(1500);
 const SLEEP_TIME: Duration = Duration::from_millis(5);
 
-pub struct LoadBalancer<'a> {
+pub struct LoadBalancer {
     clients: Arc<RwLock<Vec<Arc<RwLock<TcpClient>>>>>,
     stopped: Arc<RwLock<bool>>,
     debug: Arc<RwLock<bool>>,
     threads: u16,
-    balancing_algorithm: &'a dyn BalancingAlgorithm,
+    balancing_algorithm: Arc<Mutex<RoundRobin>>,
 }
 
-impl<'a> LoadBalancer<'a> {
-    pub fn new(balancing_algorithm: &'a dyn BalancingAlgorithm, threads: u16, debug: bool) -> Self {
+impl LoadBalancer {
+    pub fn new(balancing_algorithm: RoundRobin, threads: u16, debug: bool) -> Self {
         let mut b = LoadBalancer {
             clients: Arc::new(RwLock::new(vec![])),
             stopped: Arc::new(RwLock::new(false)),
             debug: Arc::new(RwLock::new(debug)),
             threads,
-            balancing_algorithm,
+            balancing_algorithm: Arc::new(Mutex::new(balancing_algorithm)),
         };
 
         b.spawn_workers();
@@ -53,21 +54,16 @@ impl<'a> LoadBalancer<'a> {
     fn spawn_workers(&mut self) {
         let th = self.threads as u32;
 
-        // -------- REMOVE THIS LATER --------
-        let target_port: u16 = 8888;
-        let target_addr: IpAddr = IpAddr::from_str("127.0.0.1").unwrap();
-        let target_socket = SocketAddr::new(target_addr, target_port);
-        // -----------------------------------
-
         for id in 0..th {
             let c = Arc::clone(&self.clients);
             let s = Arc::clone(&self.stopped);
             let d = Arc::clone(&self.debug);
+            let b = Arc::clone(&self.balancing_algorithm);
 
             // SPAWN PROCESSORS
             thread::spawn(move || loop {
                 thread::sleep(SLEEP_TIME);
-
+                
                 // HANDLE CLIENTS
                 {
                     let clients = &*c.read().unwrap();
@@ -128,6 +124,9 @@ impl<'a> LoadBalancer<'a> {
                                 }
                             }
                         } else {
+                            // determine target host to connect to, using the balancing algorithm!
+                            let target_socket = b.lock().unwrap().get_next_host();
+
                             if *d.read().unwrap() {
                                 println!(
                                     "[Thread {}] Connecting client ({} -> {})",
@@ -135,6 +134,8 @@ impl<'a> LoadBalancer<'a> {
                                 );
                             }
 
+                            // connect to host!
+                            // TODO: this blocks! solve it differently!
                             let success =
                                 client.connect_to_target(target_socket, CONNECTION_TIMEOUT);
 
