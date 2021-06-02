@@ -25,6 +25,10 @@ fn main() -> Result<()> {
     // - Need a way to remove inactive clients --> timeouts on no receive or sending data?
 
     let host_manager = HostManager::new("hosts");
+    if host_manager.hosts.len() == 0 {
+        return Ok(());
+    }
+
     let mut balancer = LoadBalancer::new(host_manager, 4);
 
     let should_cancel = Arc::new(Mutex::new(false));
