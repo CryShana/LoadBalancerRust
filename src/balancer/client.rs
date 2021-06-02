@@ -20,7 +20,7 @@ impl TcpClient {
         stream.set_nonblocking(true).unwrap();
 
         let addr = stream.peer_addr().unwrap();
-        println!("Connected from {}", addr.to_string());
+        println!("[Listener] Connected from {}", addr.to_string());
 
         TcpClient {
             stream: stream,

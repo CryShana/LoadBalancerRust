@@ -9,6 +9,7 @@ use std::{
     u16,
 };
 
+use super::HostManager;
 use super::TcpClient;
 const CONNECTION_TIMEOUT: Duration = Duration::from_millis(1500);
 const SLEEP_TIME: Duration = Duration::from_millis(5);
@@ -17,14 +18,16 @@ pub struct LoadBalancer {
     clients: Arc<RwLock<Vec<Arc<RwLock<TcpClient>>>>>,
     stopped: Arc<RwLock<bool>>,
     threads: u16,
+    host_manager: HostManager
 }
 
 impl LoadBalancer {
-    pub fn new(threads: u16) -> Self {
+    pub fn new(host_manager: HostManager, threads: u16) -> Self {
         let mut b = LoadBalancer {
             clients: Arc::new(RwLock::new(vec![])),
             stopped: Arc::new(RwLock::new(false)),
             threads: threads,
+            host_manager: host_manager
         };
 
         b.spawn_workers();
