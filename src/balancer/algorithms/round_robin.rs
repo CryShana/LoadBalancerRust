@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use super::BalancingAlgorithm;
 use super::HostManager;
 
@@ -19,8 +21,8 @@ impl RoundRobin {
 }
 
 impl BalancingAlgorithm for RoundRobin {
-    fn get_next_host(&mut self) -> String {
-        let val = self.host_manager.hosts[self.current_host].to_string();
+    fn get_next_host(&mut self) -> SocketAddr {
+        let val = self.host_manager.hosts[self.current_host];
 
         self.current_host = self.current_host + 1;
         if self.current_host > self.max_host {
