@@ -18,7 +18,7 @@ pub struct LoadBalancer {
     clients: Arc<RwLock<Vec<Arc<RwLock<TcpClient>>>>>,
     stopped: Arc<RwLock<bool>>,
     threads: u16,
-    host_manager: HostManager
+    host_manager: HostManager,
 }
 
 impl LoadBalancer {
@@ -27,7 +27,7 @@ impl LoadBalancer {
             clients: Arc::new(RwLock::new(vec![])),
             stopped: Arc::new(RwLock::new(false)),
             threads: threads,
-            host_manager: host_manager
+            host_manager: host_manager,
         };
 
         b.spawn_workers();
@@ -68,7 +68,7 @@ impl LoadBalancer {
                 {
                     let clients = &*c.read().unwrap();
                     let length = clients.len() as u32;
-                    let mut capacity = length / th;
+                    let mut capacity = length / th;                   
 
                     // if there are less clients than threads, we can let the first thread handle all of them
                     if length < th {
@@ -83,7 +83,11 @@ impl LoadBalancer {
 
                     // every thread starts at a specified index and handles [capacity] clients
                     let starting_index = id * capacity;
-                    let end_index = starting_index + capacity; // exclusive
+                    let mut end_index = starting_index + capacity; // exclusive
+                    if id == th - 1 {
+                        // if this is the last thread, just handle all of rest
+                        end_index = length - 1;
+                    }
 
                     // handle clients
                     for i in starting_index..end_index {
@@ -119,6 +123,7 @@ impl LoadBalancer {
                             );
                             let success =
                                 client.connect_to_target(target_socket, CONNECTION_TIMEOUT);
+
                             if success {
                                 println!(
                                     "[Thread {}] Connected client ({} -> {})",
