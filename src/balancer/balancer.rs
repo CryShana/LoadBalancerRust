@@ -1,7 +1,6 @@
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::RwLock;
-use std::thread::Thread;
 use std::usize;
 use std::{
     net::{IpAddr, SocketAddr, TcpStream},
@@ -18,7 +17,6 @@ pub struct LoadBalancer {
     clients: Arc<RwLock<Vec<Arc<RwLock<TcpClient>>>>>,
     stopped: Arc<RwLock<bool>>,
     threads: u16,
-    workers: Vec<Thread>,
 }
 
 impl LoadBalancer {
@@ -27,7 +25,6 @@ impl LoadBalancer {
             clients: Arc::new(RwLock::new(vec![])),
             stopped: Arc::new(RwLock::new(false)),
             threads: threads,
-            workers: vec![],
         };
 
         b.spawn_workers();
@@ -110,10 +107,26 @@ impl LoadBalancer {
                                 // connection to either server or client has failed
 
                                 // removal from list is handled later
+                                println!("[Thread {}] Connection ended ({})", id, client.address);
                             }
                         } else {
-                            println!("[Thread {}] Connecting client", id);
-                            client.connect_to_target(target_socket, CONNECTION_TIMEOUT);
+                            println!(
+                                "[Thread {}] Connecting client ({} -> {})",
+                                id, client.address, target_socket
+                            );
+                            let success =
+                                client.connect_to_target(target_socket, CONNECTION_TIMEOUT);
+                            if success {
+                                println!(
+                                    "[Thread {}] Connected client ({} -> {})",
+                                    id, client.address, target_socket
+                                );
+                            } else {
+                                println!(
+                                    "[Thread {}] Failed to connect client ({} -> {})",
+                                    id, client.address, target_socket
+                                );
+                            }
                         }
                     }
                 }
@@ -131,12 +144,12 @@ impl LoadBalancer {
         let s = Arc::clone(&self.stopped);
         thread::spawn(move || loop {
             loop {
-                thread::sleep(Duration::from_secs(2));
+                thread::sleep(Duration::from_secs(5));
 
                 let mut clients = c.write().unwrap();
                 let mut len = clients.len();
                 let mut i = 0;
-                
+
                 loop {
                     if i >= len {
                         break;
