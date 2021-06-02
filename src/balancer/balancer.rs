@@ -68,7 +68,7 @@ impl LoadBalancer {
                 {
                     let clients = &*c.read().unwrap();
                     let length = clients.len() as u32;
-                    let mut capacity = length / th;                   
+                    let mut capacity = length / th;
 
                     // if there are less clients than threads, we can let the first thread handle all of them
                     if length < th {
@@ -86,7 +86,7 @@ impl LoadBalancer {
                     let mut end_index = starting_index + capacity; // exclusive
                     if id == th - 1 {
                         // if this is the last thread, just handle all of rest
-                        end_index = length - 1;
+                        end_index = length;
                     }
 
                     // handle clients
