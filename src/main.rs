@@ -1,15 +1,14 @@
 use std::io::{prelude::*, Result};
-use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::net::TcpListener;
 use std::process::exit;
 
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{self, Duration};
 use std::{env, thread};
-use threadpool::ThreadPool;
 
 mod balancer;
-use balancer::{LoadBalancer, TcpClient};
+use balancer::{LoadBalancer, HostManager};
 
 const SLEEP_TIME: Duration = Duration::from_millis(5);
 
@@ -25,7 +24,8 @@ fn main() -> Result<()> {
     // IDEA: save new clients to a pre-allocated array OR list --- multiple threads are then spawned and handle clients in this array (because it's non-blocking, can jsut go through many of them)
     // - Need a way to remove inactive clients --> timeouts on no receive or sending data?
 
-    let mut balancer = LoadBalancer::new(4);
+    let host_manager = HostManager::new("hosts");
+    let mut balancer = LoadBalancer::new(host_manager, 4);
 
     let should_cancel = Arc::new(Mutex::new(false));
     let cancel = Arc::clone(&should_cancel);
