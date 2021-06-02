@@ -41,27 +41,25 @@ impl TcpClient {
         self.is_client_connected
     }
 
-    pub fn connect_to_target(&mut self, target: SocketAddr, timeout: Duration) {
+    pub fn connect_to_target(&mut self, target: SocketAddr, timeout: Duration) -> bool {
         self.close_connection_to_target();
 
         let str = match TcpStream::connect_timeout(&target, timeout) {
             Ok(stream) => stream,
             Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
                 // timed out
-                println!(
-                    "[{} <-> {}] Timed out connection to server",
-                    self.address, target
-                );
-                return;
+                return false;
             }
             Err(err) => {
+                // error while trying to connect (msg: err.to_string())
+                /* 
                 println!(
                     "[{} <-> {}] Error while trying to connect to server: {}",
                     self.address,
                     target,
                     err.to_string()
-                );
-                return;
+                );*/
+                return false;
             }
         };
 
@@ -71,7 +69,7 @@ impl TcpClient {
         self.target_stream = Some(str);
         self.is_connected = true;
 
-        println!("[{} <-> {}] Connection established", self.address, target);
+        return true;
     }
 
     /**
@@ -91,12 +89,7 @@ impl TcpClient {
             Ok(r) => r as i32,
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => -1,
             Err(err) => {
-                // error with connection
-                println!(
-                    "[{} <-> {}] Connection to client failed!",
-                    self.address, target
-                );
-
+                // error with connection to client
                 self.close_connection();
                 return false;
             }
@@ -106,8 +99,7 @@ impl TcpClient {
         if read > 0 {
             str.write(&self.buffer[..(read as usize)]).unwrap();
         } else if read == 0 {
-            println!("[{} <-> {}] Zero buffer from client", self.address, target);
-
+            //println!("[{} <-> {}] Zero buffer from client", self.address, target);
             self.close_connection();
             return false;
         }
@@ -117,12 +109,7 @@ impl TcpClient {
             Ok(r) => r as i32,
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => -1,
             Err(err) => {
-                // error with connection
-                println!(
-                    "[{} <-> {}] Connection to server failed!",
-                    self.address, target
-                );
-
+                // error with connection to server
                 self.close_connection_to_target();
                 return false;
             }
@@ -132,7 +119,7 @@ impl TcpClient {
         if reads > 0 {
             self.stream.write(&self.buffer[..(reads as usize)]).unwrap();
         } else if reads == 0 {
-            println!("[{} <-> {}] Zero buffer from server", self.address, target);
+            //println!("[{} <-> {}] Zero buffer from server", self.address, target);
             self.close_connection_to_target();
             return false;
         }
@@ -147,12 +134,6 @@ impl TcpClient {
                 .expect("Failed to shutdown server TCP stream");
 
             self.is_connected = false;
-
-            println!(
-                "[{} <-> {}] Connection to target ended",
-                self.address,
-                self.target.unwrap()
-            );
         }
     }
 
@@ -167,12 +148,6 @@ impl TcpClient {
 
             // also close connection to target if connected - there is no reason to stay connected if client is not
             self.close_connection_to_target();
-
-            println!(
-                "[{} <-> {}] Connection to client ended",
-                self.address,
-                self.target.unwrap()
-            );
         }
     }
 }
