@@ -76,7 +76,7 @@ impl TcpClient {
         self.target_stream = Some(str);
         self.is_connected = true;
         self.is_connecting = false;
-        
+
         return true;
     }
 
@@ -138,8 +138,7 @@ impl TcpClient {
     fn close_connection_to_target(&mut self) {
         if self.is_connected {
             let str = self.target_stream.as_ref().unwrap();
-            str.shutdown(Shutdown::Both)
-                .expect("Failed to shutdown server TCP stream");
+            str.shutdown(Shutdown::Both).expect("Failed to shutdown server TCP stream");
 
             self.is_connected = false;
         }
@@ -147,9 +146,7 @@ impl TcpClient {
 
     fn close_connection(&mut self) {
         if self.is_client_connected {
-            self.stream
-                .shutdown(Shutdown::Both)
-                .expect("Failed to shutdown client TCP stream");
+            self.stream.shutdown(Shutdown::Both).expect("Failed to shutdown client TCP stream");
 
             self.is_client_connected = false;
 

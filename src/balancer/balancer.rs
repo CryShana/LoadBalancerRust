@@ -2,12 +2,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
 use std::usize;
-use std::{
-    net::TcpStream,
-    thread,
-    time::Duration,
-    u16,
-};
+use std::{net::TcpStream, thread, time::Duration, u16};
 
 use super::BalancingAlgorithm;
 use super::RoundRobin;
@@ -40,10 +35,7 @@ impl LoadBalancer {
 
     pub fn add_client(&mut self, stream: TcpStream) {
         let client = TcpClient::new(stream);
-        self.clients
-            .write()
-            .unwrap()
-            .push(Arc::new(RwLock::new(client)));
+        self.clients.write().unwrap().push(Arc::new(RwLock::new(client)));
     }
 
     pub fn stop(&mut self) {
@@ -94,10 +86,7 @@ impl LoadBalancer {
                             Some(client) => client.write().unwrap(),
                             None => {
                                 if *d.read().unwrap() {
-                                    println!(
-                                        "[Thread {}] Cancelled early because collection changed",
-                                        id
-                                    );
+                                    println!("[Thread {}] Cancelled early because collection changed", id);
                                 }
                                 break;
                             }
@@ -116,10 +105,7 @@ impl LoadBalancer {
 
                                 // removal from list is handled later
                                 if *d.read().unwrap() {
-                                    println!(
-                                        "[Thread {}] Connection ended ({})",
-                                        id, client.address
-                                    );
+                                    println!("[Thread {}] Connection ended ({})", id, client.address);
                                 }
                             }
                         } else if !client.is_connecting() {
@@ -127,28 +113,18 @@ impl LoadBalancer {
                             let target_socket = b.lock().unwrap().get_next_host();
 
                             if *d.read().unwrap() {
-                                println!(
-                                    "[Thread {}] Connecting client ({} -> {})",
-                                    id, client.address, target_socket
-                                );
+                                println!("[Thread {}] Connecting client ({} -> {})", id, client.address, target_socket);
                             }
 
                             // connect to host!
                             // TODO: this blocks! solve it differently!
-                            let success =
-                                client.connect_to_target(target_socket, CONNECTION_TIMEOUT);
+                            let success = client.connect_to_target(target_socket, CONNECTION_TIMEOUT);
 
                             if *d.read().unwrap() {
                                 if success {
-                                    println!(
-                                        "[Thread {}] Connected client ({} -> {})",
-                                        id, client.address, target_socket
-                                    );
+                                    println!("[Thread {}] Connected client ({} -> {})", id, client.address, target_socket);
                                 } else {
-                                    println!(
-                                        "[Thread {}] Failed to connect client ({} -> {})",
-                                        id, client.address, target_socket
-                                    );
+                                    println!("[Thread {}] Failed to connect client ({} -> {})", id, client.address, target_socket);
                                 }
                             }
                         }

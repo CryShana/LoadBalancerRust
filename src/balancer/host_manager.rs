@@ -8,30 +8,21 @@ use std::path::Path;
 use std::str;
 
 pub struct HostManager {
-    pub hosts: Vec<SocketAddr>
+    pub hosts: Vec<SocketAddr>,
 }
 
 impl HostManager {
     pub fn new(hostfile: &str) -> Self {
         if !Path::exists(Path::new(hostfile)) {
-            println!(
-                "[Parser] Host file '{}' does not exist. Please create it and try again.",
-                hostfile
-            );
+            println!("[Parser] Host file '{}' does not exist. Please create it and try again.", hostfile);
 
-            return HostManager {
-                hosts: vec![]
-            };
+            return HostManager { hosts: vec![] };
         }
 
         let hosts = match HostManager::parse_hosts(hostfile) {
             Ok(h) => h,
             Err(err) => {
-                println!(
-                    "[Parser] Failed to parse host file '{}' -> {}",
-                    hostfile,
-                    err.to_string()
-                );
+                println!("[Parser] Failed to parse host file '{}' -> {}", hostfile, err.to_string());
                 vec![]
             }
         };
