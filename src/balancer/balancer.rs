@@ -122,7 +122,7 @@ impl LoadBalancer {
                                     );
                                 }
                             }
-                        } else {
+                        } else if !client.is_connecting() {
                             // determine target host to connect to, using the balancing algorithm!
                             let target_socket = b.lock().unwrap().get_next_host();
 
