@@ -52,7 +52,13 @@ fn main() -> Result<()> {
 
     let addr = format!("0.0.0.0:{}", listening_port);
 
-    let listener: TcpListener = TcpListener::bind(addr).expect("Failed to bind to port!");
+    let listener: TcpListener = match TcpListener::bind(addr) {
+        Ok(l) => l,
+        Err(err) => {
+            println!("Failed to bind to port {} -> {}", listening_port, err.to_string());
+            exit(2);
+        }
+    };
     listener.set_nonblocking(true).expect("Failed to put listener into non-blocking mode!");
 
     // accept connections and process them serially

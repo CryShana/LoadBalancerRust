@@ -57,15 +57,8 @@ impl TcpClient {
                 // timed out
                 return false;
             }
-            Err(err) => {
-                // error while trying to connect (msg: err.to_string())
-                /*
-                println!(
-                    "[{} <-> {}] Error while trying to connect to server: {}",
-                    self.address,
-                    target,
-                    err.to_string()
-                );*/
+            Err(_) => {
+                // error while trying to connect
                 return false;
             }
         };
@@ -84,19 +77,13 @@ impl TcpClient {
         Reads from client and forwards it to server. Returns [false] when connection to either client or server fails.
     */
     pub fn process(&mut self) -> bool {
-        // do not process if target host is not set/connected
-        let target = match self.target {
-            Some(t) => t,
-            None => return true,
-        };
-
         let mut str = self.target_stream.as_ref().unwrap();
 
         // READ FROM CLIENT
         let read: i32 = match self.stream.read(&mut self.buffer) {
             Ok(r) => r as i32,
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => -1,
-            Err(err) => {
+            Err(_) => {
                 // error with connection to client
                 self.close_connection();
                 return false;
@@ -116,7 +103,7 @@ impl TcpClient {
         let reads: i32 = match str.read(&mut self.buffer) {
             Ok(r) => r as i32,
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => -1,
-            Err(err) => {
+            Err(_) => {
                 // error with connection to server
                 self.close_connection_to_target();
                 return false;
