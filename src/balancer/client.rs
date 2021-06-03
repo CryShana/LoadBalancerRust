@@ -1,15 +1,19 @@
 use std::io::prelude::*;
+use std::io::ErrorKind;
+use std::io::Result;
 use std::net::Shutdown;
 use std::net::SocketAddr;
 use std::net::TcpStream;
 use std::time::Duration;
+
+use socket2::{Domain, Socket, Type};
 
 pub struct TcpClient {
     stream: TcpStream,
     buffer: [u8; 4096],
 
     target: Option<SocketAddr>,
-    target_stream: Option<TcpStream>,
+    target_stream: Option<Socket>,
     is_connected: bool,
     is_connecting: bool,
     is_client_connected: bool,
@@ -35,6 +39,10 @@ impl TcpClient {
         }
     }
 
+    pub fn get_target_addr(&self) -> Option<SocketAddr> {
+        self.target
+    }
+
     pub fn is_connected(&self) -> bool {
         self.is_connected
     }
@@ -47,30 +55,56 @@ impl TcpClient {
         self.is_client_connected
     }
 
-    pub fn connect_to_target(&mut self, target: SocketAddr, timeout: Duration) -> bool {
-        self.close_connection_to_target();
-        self.is_connecting = true;
+    pub fn connect_to_target(&mut self, target: SocketAddr, timeout: Duration) -> Result<bool> {
+        if !self.is_connecting || self.target_stream.is_none() {
+            self.close_connection_to_target();
 
-        let str = match TcpStream::connect_timeout(&target, timeout) {
-            Ok(stream) => stream,
-            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
-                // timed out
-                return false;
+            // prepare for new connection - initialize socket and set target
+            let mut domain = Domain::IPV4;
+            if target.is_ipv6() {
+                domain = Domain::IPV6;
             }
-            Err(_) => {
-                // error while trying to connect
-                return false;
+
+            let socket = Socket::new(domain, Type::STREAM, None)?;
+            socket.set_nonblocking(true)?;
+
+            self.is_connecting = true;
+            self.target = Some(target);
+            self.target_stream = Some(socket);
+        }
+
+        // TODO: maybe use SO_KEEPALIVE socket option to check for dead connections?
+
+        // use the previously initialized target and socket (target parameter is ignored when client is connecting)
+        let socket = self.target_stream.as_ref().unwrap();
+        let target = self.target.unwrap();
+
+        // initiate connection here
+        match socket.connect(&target.into()) {
+            Ok(()) => {
+                self.is_connected = true;
+                self.is_connecting = false;
+                return Ok(true);
+            }
+            Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                return Ok(false);
+            }
+            Err(ref e) if e.kind() == ErrorKind::Other => {
+                // WINDOWS 10: If socket already connected, then os error = 10056
+                let code = e.raw_os_error().unwrap_or(0);
+
+                self.is_connected = true;
+                self.is_connecting = false;
+                
+                println!("Connected - {} - Code: {}", e.to_string(), code);
+                return Ok(true);
+            }
+            Err(err) => {
+                //self.is_connecting = false;
+                println!("Error? {} -- KIND: {:?}", err.to_string(), err.kind());
+                return Ok(false);
             }
         };
-
-        str.set_nonblocking(true).unwrap();
-
-        self.target = Some(target);
-        self.target_stream = Some(str);
-        self.is_connected = true;
-        self.is_connecting = false;
-
-        return true;
     }
 
     /**
@@ -126,6 +160,9 @@ impl TcpClient {
         if self.is_connected {
             let str = self.target_stream.as_ref().unwrap();
             str.shutdown(Shutdown::Both).expect("Failed to shutdown server TCP stream");
+
+            self.target = None;
+            self.target_stream = None;
 
             self.is_connected = false;
         }
