@@ -139,7 +139,7 @@ impl TcpClient {
                 return Ok(true);
             }
             Err(_) => {
-                self.is_connecting = false;
+                self.close_connection_to_target(true);
                 return Ok(false);
             }
         };
