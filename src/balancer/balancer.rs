@@ -1,10 +1,9 @@
-use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
 use std::usize;
 use std::{
-    net::{IpAddr, SocketAddr, TcpStream},
+    net::TcpStream,
     thread,
     time::Duration,
     u16,
@@ -63,7 +62,7 @@ impl LoadBalancer {
             // SPAWN PROCESSORS
             thread::spawn(move || loop {
                 thread::sleep(SLEEP_TIME);
-                
+
                 // HANDLE CLIENTS
                 {
                     let clients = &*c.read().unwrap();
