@@ -111,9 +111,8 @@ impl TcpClient {
                 self.is_connecting = false;
                 return Ok(true);
             }
-            Err(err) => {
-                //self.is_connecting = false;
-                println!("Error? {} -- KIND: {:?}", err.to_string(), err.kind());
+            Err(_) => {
+                self.is_connecting = false;
                 return Ok(false);
             }
         };
