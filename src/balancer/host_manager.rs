@@ -47,7 +47,7 @@ impl HostManager {
             // this also accepts domains and tries to resolve them, the first resolved IP is used
             let addr: Vec<SocketAddr> = match l.to_socket_addrs() {
                 Ok(a) => a.collect(),
-                Err(err) => {
+                Err(_) => {
                     println!("[Parser] Invalid host: '{}'", l);
                     continue;
                 }
