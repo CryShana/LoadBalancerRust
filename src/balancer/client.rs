@@ -74,7 +74,7 @@ impl TcpClient {
 
     pub fn connect_to_target(&mut self, target: SocketAddr, timeout: Duration, total_timeout: Duration) -> Result<bool> {
         if !self.is_connecting || self.target_stream.is_none() {
-            self.close_connection_to_target();
+            self.close_connection_to_target(false);
 
             // prepare for new connection - initialize socket and set target
             let mut domain = Domain::IPV4;
@@ -97,7 +97,7 @@ impl TcpClient {
 
         // check if we timed out for this target
         if Instant::now() > self.connection_started_time {
-            self.close_connection_to_target();
+            self.close_connection_to_target(true);
             return Ok(false);
         }
 
@@ -160,12 +160,11 @@ impl TcpClient {
                 Ok(_) => {}
                 Err(_) => {
                     // error with connection to server
-                    self.close_connection_to_target();
+                    self.close_connection_to_target(true);  
                     return false;
                 }
             }
         } else if read == 0 {
-            //println!("[{} <-> {}] Zero buffer from client", self.address, target);
             self.close_connection();
             return false;
         }
@@ -176,7 +175,7 @@ impl TcpClient {
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => -1,
             Err(_) => {
                 // error with connection to server
-                self.close_connection_to_target();
+                self.close_connection_to_target(true);
                 return false;
             }
         };
@@ -192,15 +191,14 @@ impl TcpClient {
                 }
             };
         } else if reads == 0 {
-            //println!("[{} <-> {}] Zero buffer from server", self.address, target);
-            self.close_connection_to_target();
+            self.close_connection_to_target(false);
             return false;
         }
 
         return true;
     }
 
-    fn close_connection_to_target(&mut self) {
+    fn close_connection_to_target(&mut self, target_errored: bool) {
         if self.is_connected {
             let str = self.target_stream.as_ref().unwrap();
             str.shutdown(Shutdown::Both).unwrap_or(());
@@ -222,7 +220,7 @@ impl TcpClient {
             self.is_client_connected = false;
 
             // also close connection to target if connected - there is no reason to stay connected if client is not
-            self.close_connection_to_target();
+            self.close_connection_to_target(false);
         }
     }
 }
