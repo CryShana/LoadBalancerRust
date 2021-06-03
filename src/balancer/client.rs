@@ -18,6 +18,7 @@ pub struct TcpClient {
     is_connecting: bool,
     is_client_connected: bool,
     pub address: SocketAddr,
+    already_connected_code: i32,
 }
 
 impl TcpClient {
@@ -26,6 +27,15 @@ impl TcpClient {
 
         let addr = stream.peer_addr().unwrap();
         println!("[Listener] Connected from {}", addr.to_string());
+
+        // determine OS error code for "already connected socket"
+        let mut code = 0;
+        let os = std::env::consts::OS;
+        if os == "windows" {
+            code = 10056;
+        } else {
+            code = 106;
+        }
 
         TcpClient {
             stream: stream,
@@ -36,6 +46,7 @@ impl TcpClient {
             is_connected: false,
             is_connecting: false,
             is_client_connected: true,
+            already_connected_code: code,
         }
     }
 
@@ -90,13 +101,14 @@ impl TcpClient {
                 return Ok(false);
             }
             Err(ref e) if e.kind() == ErrorKind::Other => {
-                // WINDOWS 10: If socket already connected, then os error = 10056
                 let code = e.raw_os_error().unwrap_or(0);
+                if code != self.already_connected_code {
+                    // actual error
+                    return Ok(false);
+                }
 
                 self.is_connected = true;
                 self.is_connecting = false;
-                
-                println!("Connected - {} - Code: {}", e.to_string(), code);
                 return Ok(true);
             }
             Err(err) => {
@@ -126,7 +138,14 @@ impl TcpClient {
 
         // WRITE TO SERVER
         if read > 0 {
-            str.write(&self.buffer[..(read as usize)]).unwrap();
+            match str.write(&self.buffer[..(read as usize)]) {
+                Ok(_) => {}
+                Err(_) => {
+                    // error with connection to server
+                    self.close_connection_to_target();
+                    return false;
+                }
+            }
         } else if read == 0 {
             //println!("[{} <-> {}] Zero buffer from client", self.address, target);
             self.close_connection();
@@ -146,7 +165,14 @@ impl TcpClient {
 
         // WRITE TO CLIENT
         if reads > 0 {
-            self.stream.write(&self.buffer[..(reads as usize)]).unwrap();
+            match self.stream.write(&self.buffer[..(reads as usize)]) {
+                Ok(_) => {}
+                Err(_) => {
+                    // error with connection to client
+                    self.close_connection();
+                    return false;
+                }
+            };
         } else if reads == 0 {
             //println!("[{} <-> {}] Zero buffer from server", self.address, target);
             self.close_connection_to_target();
@@ -159,7 +185,7 @@ impl TcpClient {
     fn close_connection_to_target(&mut self) {
         if self.is_connected {
             let str = self.target_stream.as_ref().unwrap();
-            str.shutdown(Shutdown::Both).expect("Failed to shutdown server TCP stream");
+            str.shutdown(Shutdown::Both).unwrap_or(());
 
             self.target = None;
             self.target_stream = None;
@@ -170,7 +196,7 @@ impl TcpClient {
 
     fn close_connection(&mut self) {
         if self.is_client_connected {
-            self.stream.shutdown(Shutdown::Both).expect("Failed to shutdown client TCP stream");
+            self.stream.shutdown(Shutdown::Both).unwrap_or(());
 
             self.is_client_connected = false;
 
