@@ -11,6 +11,7 @@ pub struct TcpClient {
     target: Option<SocketAddr>,
     target_stream: Option<TcpStream>,
     is_connected: bool,
+    is_connecting: bool,
     is_client_connected: bool,
     pub address: SocketAddr,
 }
@@ -29,6 +30,7 @@ impl TcpClient {
             target_stream: None,
             address: addr,
             is_connected: false,
+            is_connecting: false,
             is_client_connected: true,
         }
     }
@@ -37,12 +39,17 @@ impl TcpClient {
         self.is_connected
     }
 
+    pub fn is_connecting(&self) -> bool {
+        self.is_connecting
+    }
+
     pub fn is_client_connected(&self) -> bool {
         self.is_client_connected
     }
 
     pub fn connect_to_target(&mut self, target: SocketAddr, timeout: Duration) -> bool {
         self.close_connection_to_target();
+        self.is_connecting = true;
 
         let str = match TcpStream::connect_timeout(&target, timeout) {
             Ok(stream) => stream,
@@ -52,7 +59,7 @@ impl TcpClient {
             }
             Err(err) => {
                 // error while trying to connect (msg: err.to_string())
-                /* 
+                /*
                 println!(
                     "[{} <-> {}] Error while trying to connect to server: {}",
                     self.address,
@@ -68,7 +75,8 @@ impl TcpClient {
         self.target = Some(target);
         self.target_stream = Some(str);
         self.is_connected = true;
-
+        self.is_connecting = false;
+        
         return true;
     }
 
@@ -139,7 +147,6 @@ impl TcpClient {
 
     fn close_connection(&mut self) {
         if self.is_client_connected {
-
             self.stream
                 .shutdown(Shutdown::Both)
                 .expect("Failed to shutdown client TCP stream");
