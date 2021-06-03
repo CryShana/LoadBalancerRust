@@ -4,8 +4,8 @@ use std::process::exit;
 
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
 mod balancer;
 use balancer::{HostManager, LoadBalancer};
@@ -53,9 +53,7 @@ fn main() -> Result<()> {
     let addr = format!("0.0.0.0:{}", listening_port);
 
     let listener: TcpListener = TcpListener::bind(addr).expect("Failed to bind to port!");
-    listener
-        .set_nonblocking(true)
-        .expect("Failed to put listener into non-blocking mode!");
+    listener.set_nonblocking(true).expect("Failed to put listener into non-blocking mode!");
 
     // accept connections and process them serially
     println!("[Listener] Started listening on port {}", listening_port);
