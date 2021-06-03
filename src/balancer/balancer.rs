@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::RwLock;
 use std::usize;
 use std::{net::TcpStream, thread, time::Duration, u16};
