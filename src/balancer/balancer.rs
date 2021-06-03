@@ -22,7 +22,7 @@ pub struct LoadBalancer {
     stopped: Arc<RwLock<bool>>,
     debug: Arc<RwLock<bool>>,
     threads: u16,
-    balancing_algorithm: Arc<Mutex<RoundRobin>>,
+    balancing_algorithm: Arc<RwLock<RoundRobin>>,
 }
 
 impl LoadBalancer {
@@ -32,7 +32,7 @@ impl LoadBalancer {
             stopped: Arc::new(RwLock::new(false)),
             debug: Arc::new(RwLock::new(debug)),
             threads,
-            balancing_algorithm: Arc::new(Mutex::new(balancing_algorithm)),
+            balancing_algorithm: Arc::new(RwLock::new(balancing_algorithm)),
         };
 
         b.spawn_threads();
@@ -118,14 +118,14 @@ impl LoadBalancer {
                                 // report host error to host manager
                                 let last_t = client.get_last_target_addr();
                                 if client.last_target_errored() && last_t.is_some() {
-                                    b.lock().unwrap().report_error(last_t.unwrap());
+                                    b.write().unwrap().report_error(last_t.unwrap());
                                 }
                             }
                         } else {
                             // determine target host to connect to, using the balancing algorithm!
                             let target_socket = match client.get_target_addr() {
                                 Some(s) => s,
-                                None => b.lock().unwrap().get_next_host(),
+                                None => b.write().unwrap().get_next_host(),
                             };
 
                             if *d.read().unwrap() && !client.is_connecting() {
@@ -157,10 +157,13 @@ impl LoadBalancer {
                                 // report host error to host manager
                                 let last_t = client.get_last_target_addr();
                                 if client.last_target_errored() && last_t.is_some() {
-                                    b.lock().unwrap().report_error(last_t.unwrap());
+                                    b.write().unwrap().report_error(last_t.unwrap());
                                 }
                             } else {
-                                b.lock().unwrap().report_success(target_socket);
+                                // report success if connection succeeded - we first check if it's even necessary before taking WRITE access for the balancer
+                                if b.read().unwrap().is_on_cooldown(target_socket) {
+                                    b.write().unwrap().report_success(target_socket);
+                                }
                             }
                         }
                     }
