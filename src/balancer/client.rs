@@ -1,4 +1,3 @@
-use core::time;
 use std::io::prelude::*;
 use std::io::ErrorKind;
 use std::io::Result;
@@ -20,8 +19,9 @@ pub struct TcpClient {
     is_connecting: bool,
     is_client_connected: bool,
     pub address: SocketAddr,
-    connection_started_time: Instant,
     already_connected_code: i32,
+    last_connection_loss: Instant,
+    connection_started_time: Instant,
 }
 
 impl TcpClient {
@@ -51,6 +51,7 @@ impl TcpClient {
             is_connecting: false,
             is_client_connected: true,
             already_connected_code: code,
+            last_connection_loss: Instant::now(),
             connection_started_time: Instant::now(),
         }
     }
@@ -71,7 +72,7 @@ impl TcpClient {
         self.is_client_connected
     }
 
-    pub fn connect_to_target(&mut self, target: SocketAddr, timeout: Duration) -> Result<bool> {
+    pub fn connect_to_target(&mut self, target: SocketAddr, timeout: Duration, total_timeout: Duration) -> Result<bool> {
         if !self.is_connecting || self.target_stream.is_none() {
             self.close_connection_to_target();
 
@@ -94,17 +95,21 @@ impl TcpClient {
         let socket = self.target_stream.as_ref().unwrap();
         let target = self.target.unwrap();
 
-        // check if we timed out
+        // check if we timed out for this target
         if Instant::now() > self.connection_started_time {
             self.close_connection_to_target();
+            return Ok(false);
+        }
+
+        if Instant::now() > self.last_connection_loss + total_timeout {
+            self.close_connection();
             return Ok(false);
         }
 
         // initiate connection here
         match socket.connect(&target.into()) {
             Ok(()) => {
-                self.is_connected = true;
-                self.is_connecting = false;
+                self.set_connected();
                 return Ok(true);
             }
             Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
@@ -117,8 +122,7 @@ impl TcpClient {
                     return Ok(false);
                 }
 
-                self.is_connected = true;
-                self.is_connecting = false;
+                self.set_connected();
                 return Ok(true);
             }
             Err(_) => {
@@ -126,6 +130,11 @@ impl TcpClient {
                 return Ok(false);
             }
         };
+    }
+
+    fn set_connected(&mut self){
+        self.is_connected = true;
+        self.is_connecting = false;
     }
 
     /**
@@ -195,6 +204,8 @@ impl TcpClient {
         if self.is_connected {
             let str = self.target_stream.as_ref().unwrap();
             str.shutdown(Shutdown::Both).unwrap_or(());
+
+            self.last_connection_loss = Instant::now();
         }
 
         self.target = None;

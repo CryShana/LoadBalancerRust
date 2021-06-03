@@ -7,7 +7,14 @@ use std::{net::TcpStream, thread, time::Duration, u16};
 use super::BalancingAlgorithm;
 use super::RoundRobin;
 use super::TcpClient;
-const CONNECTION_TIMEOUT: Duration = Duration::from_millis(1000);
+
+// this is used as the total timeout allowed to connect before client is disconnected
+const TOTAL_CONNECTION_TIMEOUT: Duration = Duration::from_millis(4000);
+
+// this is used as the timeout to connect to a target host
+const CONNECTION_TIMEOUT: Duration = Duration::from_millis(400);
+
+// this is used between processing loops
 const SLEEP_TIME: Duration = Duration::from_millis(5);
 
 pub struct LoadBalancer {
@@ -109,12 +116,10 @@ impl LoadBalancer {
                                 }
                             }
                         } else {
-                            // determine target host to connect to, using the balancing algorithm!               
+                            // determine target host to connect to, using the balancing algorithm!
                             let target_socket = match client.get_target_addr() {
                                 Some(s) => s,
-                                None => {
-                                    b.lock().unwrap().get_next_host()
-                                }
+                                None => b.lock().unwrap().get_next_host(),
                             };
 
                             if *d.read().unwrap() && !client.is_connecting() {
@@ -122,7 +127,7 @@ impl LoadBalancer {
                             }
 
                             // connect to target
-                            let success = match client.connect_to_target(target_socket, CONNECTION_TIMEOUT) {
+                            let success = match client.connect_to_target(target_socket, CONNECTION_TIMEOUT, TOTAL_CONNECTION_TIMEOUT) {
                                 Ok(s) => s,
                                 Err(e) => {
                                     println!("Error while trying to connect! {}", e.to_string());
