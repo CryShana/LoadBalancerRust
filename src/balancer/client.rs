@@ -1,3 +1,4 @@
+use core::time;
 use std::io::prelude::*;
 use std::io::ErrorKind;
 use std::io::Result;
@@ -5,6 +6,7 @@ use std::net::Shutdown;
 use std::net::SocketAddr;
 use std::net::TcpStream;
 use std::time::Duration;
+use std::time::Instant;
 
 use socket2::{Domain, Socket, Type};
 
@@ -18,6 +20,7 @@ pub struct TcpClient {
     is_connecting: bool,
     is_client_connected: bool,
     pub address: SocketAddr,
+    connection_started_time: Instant,
     already_connected_code: i32,
 }
 
@@ -29,11 +32,12 @@ impl TcpClient {
         println!("[Listener] Connected from {}", addr.to_string());
 
         // determine OS error code for "already connected socket"
-        let mut code = 0;
+        let code;
         let os = std::env::consts::OS;
         if os == "windows" {
             code = 10056;
         } else {
+            // linux
             code = 106;
         }
 
@@ -47,6 +51,7 @@ impl TcpClient {
             is_connecting: false,
             is_client_connected: true,
             already_connected_code: code,
+            connection_started_time: Instant::now()
         }
     }
 
@@ -82,6 +87,7 @@ impl TcpClient {
             self.is_connecting = true;
             self.target = Some(target);
             self.target_stream = Some(socket);
+            self.connection_started_time = Instant::now() + timeout;    
         }
 
         // TODO: maybe use SO_KEEPALIVE socket option to check for dead connections?
@@ -89,6 +95,13 @@ impl TcpClient {
         // use the previously initialized target and socket (target parameter is ignored when client is connecting)
         let socket = self.target_stream.as_ref().unwrap();
         let target = self.target.unwrap();
+
+        // check if we timed out
+        if Instant::now() > self.connection_started_time {
+            //println!("===================================== WE TIMED OUT BIATCH ===================================");
+            self.close_connection_to_target();
+            return Ok(false);
+        }
 
         // initiate connection here
         match socket.connect(&target.into()) {
@@ -185,12 +198,13 @@ impl TcpClient {
         if self.is_connected {
             let str = self.target_stream.as_ref().unwrap();
             str.shutdown(Shutdown::Both).unwrap_or(());
-
-            self.target = None;
-            self.target_stream = None;
-
-            self.is_connected = false;
         }
+        
+        self.target = None;
+        self.target_stream = None;
+
+        self.is_connected = false;
+        self.is_connecting = false;
     }
 
     fn close_connection(&mut self) {

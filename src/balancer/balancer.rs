@@ -117,7 +117,7 @@ impl LoadBalancer {
                                 }
                             };
 
-                            if *d.read().unwrap() {
+                            if *d.read().unwrap() && !client.is_connecting() {
                                 println!("[Thread {}] Connecting client ({} -> {})", id, client.address, target_socket);
                             }
 
