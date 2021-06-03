@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     }
 
     // PREPARE THE LOAD BALANCER
-    let debug_mode = true;
+    let debug_mode = false;
     let number_of_threads = 4;
     let round_robin = RoundRobin::new(host_manager);
     let mut balancer = LoadBalancer::new(round_robin, number_of_threads, debug_mode);

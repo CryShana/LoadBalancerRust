@@ -15,7 +15,7 @@ const TOTAL_CONNECTION_TIMEOUT: Duration = Duration::from_millis(4000);
 const CONNECTION_TIMEOUT: Duration = Duration::from_millis(400);
 
 // this is used between processing loops
-const SLEEP_TIME: Duration = Duration::from_millis(5);
+const SLEEP_TIME: Duration = Duration::from_millis(4);
 
 pub struct LoadBalancer {
     clients: Arc<RwLock<Vec<Arc<RwLock<TcpClient>>>>>,
