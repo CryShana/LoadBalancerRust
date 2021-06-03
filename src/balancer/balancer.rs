@@ -159,6 +159,8 @@ impl LoadBalancer {
                                 if client.last_target_errored() && last_t.is_some() {
                                     b.lock().unwrap().report_error(last_t.unwrap());
                                 }
+                            } else {
+                                b.lock().unwrap().report_success(target_socket);
                             }
                         }
                     }

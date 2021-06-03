@@ -15,7 +15,7 @@ pub struct RoundRobin {
 
 impl RoundRobin {
     // how long the host is avoided (on cooldown) when first error is reported
-    const TARGET_DOWN_COOLDOWN: Duration = Duration::from_secs(10);
+    const TARGET_DOWN_COOLDOWN: Duration = Duration::from_secs(30);
 
     pub fn new(host_manager: HostManager) -> Self {
         let max = host_manager.hosts.len();
@@ -38,6 +38,13 @@ impl RoundRobin {
 
         index
     }
+
+    fn increment_host_counter(&mut self) {
+        self.current_host = self.current_host + 1;
+        if self.current_host >= self.max_host {
+            self.current_host = 0
+        }
+    }
 }
 
 impl BalancingAlgorithm for RoundRobin {
@@ -50,14 +57,12 @@ impl BalancingAlgorithm for RoundRobin {
             val = self.host_manager.hosts[self.current_host];
 
             // offset host selector to next one
-            self.current_host = self.current_host + 1;
-            if self.current_host >= self.max_host {
-                self.current_host = 0
-            }
+            self.increment_host_counter();
 
             // if host on cooldown, avoid it (but if we made a full cycle, just return the initial choice)
             let cooldown_index = self.get_host_cooldown_index(val);
-            if cooldown_index >= 0 && starting_host_index != self.current_host {
+            let cycle_reached = starting_host_index == self.current_host;
+            if cooldown_index >= 0 && !cycle_reached {
                 // check if cooldown has passed
                 if Instant::now() > self.cooldowns[cooldown_index as usize].1 {
                     // cooldown passed, remove it
@@ -66,6 +71,9 @@ impl BalancingAlgorithm for RoundRobin {
                 }
 
                 continue;
+            } else if cycle_reached {
+                // cycle reached, let's increment the counter to continue trying different hosts until one actually connects
+                self.increment_host_counter();
             }
 
             break;
@@ -75,7 +83,6 @@ impl BalancingAlgorithm for RoundRobin {
     }
 
     fn report_error(&mut self, addr: SocketAddr) {
-        // find index of cooldown if it exists
         let index: i32 = self.get_host_cooldown_index(addr);
 
         let new_limit = Instant::now() + RoundRobin::TARGET_DOWN_COOLDOWN;
@@ -87,5 +94,14 @@ impl BalancingAlgorithm for RoundRobin {
             // update it
             self.cooldowns[index as usize].1 = new_limit;
         }
+    }
+
+    fn report_success(&mut self, addr: SocketAddr) {
+        let index: i32 = self.get_host_cooldown_index(addr);
+        if index < 0 {
+            return;
+        }
+
+        self.cooldowns.remove(index as usize);
     }
 }
