@@ -98,7 +98,6 @@ impl TcpClient {
 
         // check if we timed out
         if Instant::now() > self.connection_started_time {
-            //println!("===================================== WE TIMED OUT BIATCH ===================================");
             self.close_connection_to_target();
             return Ok(false);
         }
