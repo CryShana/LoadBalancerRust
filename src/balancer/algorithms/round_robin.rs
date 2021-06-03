@@ -104,4 +104,9 @@ impl BalancingAlgorithm for RoundRobin {
 
         self.cooldowns.remove(index as usize);
     }
+
+    fn is_on_cooldown(&self, addr: SocketAddr) -> bool {
+        let index: i32 = self.get_host_cooldown_index(addr);
+        return index >= 0;
+    }
 }
