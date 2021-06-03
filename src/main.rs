@@ -6,13 +6,15 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
+use std::time::Instant;
 
 mod balancer;
 use balancer::{HostManager, LoadBalancer};
 
 use crate::balancer::RoundRobin;
 
-const SLEEP_TIME: Duration = Duration::from_millis(5);
+const SLEEP_TIME: Duration = Duration::from_millis(4);
+const AWAKE_TIME: Duration = Duration::from_millis(500);
 
 fn main() -> Result<()> {
     // PARSE HOSTS
@@ -57,10 +59,16 @@ fn main() -> Result<()> {
 
     // START LISTENING
     println!("[Listener] Started listening on port {}", listening_port);
+    let mut sleep_time = Instant::now();
     for stream in listener.incoming() {
+        if Instant::now() > sleep_time {
+            thread::sleep(SLEEP_TIME);
+        }
+
         match stream {
             Ok(str) => {
                 balancer.add_client(str);
+                sleep_time = Instant::now() + AWAKE_TIME;
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
             Err(err) => {
@@ -77,8 +85,6 @@ fn main() -> Result<()> {
 
             break;
         }
-
-        thread::sleep(SLEEP_TIME);
     }
 
     Ok(())
