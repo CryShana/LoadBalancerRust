@@ -7,7 +7,7 @@ use std::{net::TcpStream, thread, time::Duration, u16};
 use super::BalancingAlgorithm;
 use super::RoundRobin;
 use super::TcpClient;
-const CONNECTION_TIMEOUT: Duration = Duration::from_millis(1500);
+const CONNECTION_TIMEOUT: Duration = Duration::from_millis(1000);
 const SLEEP_TIME: Duration = Duration::from_millis(5);
 
 pub struct LoadBalancer {
@@ -108,23 +108,31 @@ impl LoadBalancer {
                                     println!("[Thread {}] Connection ended ({})", id, client.address);
                                 }
                             }
-                        } else if !client.is_connecting() {
-                            // determine target host to connect to, using the balancing algorithm!
-                            let target_socket = b.lock().unwrap().get_next_host();
+                        } else {
+                            // determine target host to connect to, using the balancing algorithm!               
+                            let target_socket = match client.get_target_addr() {
+                                Some(s) => s,
+                                None => {
+                                    b.lock().unwrap().get_next_host()
+                                }
+                            };
 
                             if *d.read().unwrap() {
                                 println!("[Thread {}] Connecting client ({} -> {})", id, client.address, target_socket);
                             }
 
-                            // connect to host!
-                            // TODO: this blocks! solve it differently!
-                            let success = client.connect_to_target(target_socket, CONNECTION_TIMEOUT);
+                            // connect to target
+                            let success = match client.connect_to_target(target_socket, CONNECTION_TIMEOUT) {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    println!("Error while trying to connect! {}", e.to_string());
+                                    continue;
+                                }
+                            };
 
                             if *d.read().unwrap() {
                                 if success {
-                                    println!("[Thread {}] Connected client ({} -> {})", id, client.address, target_socket);
-                                } else {
-                                    println!("[Thread {}] Failed to connect client ({} -> {})", id, client.address, target_socket);
+                                    println!("[Thread {}] Client connected ({} -> {})", id, client.address, target_socket);
                                 }
                             }
                         }
