@@ -51,7 +51,7 @@ impl TcpClient {
             is_connecting: false,
             is_client_connected: true,
             already_connected_code: code,
-            connection_started_time: Instant::now()
+            connection_started_time: Instant::now(),
         }
     }
 
@@ -87,10 +87,26 @@ impl TcpClient {
             self.is_connecting = true;
             self.target = Some(target);
             self.target_stream = Some(socket);
-            self.connection_started_time = Instant::now() + timeout;    
+            self.connection_started_time = Instant::now() + timeout;
         }
 
-        // TODO: maybe use SO_KEEPALIVE socket option to check for dead connections?
+        // check if client still connected
+        let mut buf: [u8; 1] = [0; 1];
+        match self.stream.peek(&mut buf) {
+            Ok(r) => {
+                if r == 0 {
+                    // connection to client lost
+                    self.close_connection();
+                    return Ok(false);
+                }
+            }
+            Err(ref e) if e.kind() == ErrorKind::WouldBlock => {}
+            Err(e) => {
+                // connection to client lost
+                self.close_connection();
+                return Ok(false);
+            }
+        }
 
         // use the previously initialized target and socket (target parameter is ignored when client is connecting)
         let socket = self.target_stream.as_ref().unwrap();
@@ -198,7 +214,7 @@ impl TcpClient {
             let str = self.target_stream.as_ref().unwrap();
             str.shutdown(Shutdown::Both).unwrap_or(());
         }
-        
+
         self.target = None;
         self.target_stream = None;
 

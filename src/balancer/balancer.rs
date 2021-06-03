@@ -150,6 +150,7 @@ impl LoadBalancer {
         // SPAWN CLEANER - will clean disconnected clients from vector
         let c = Arc::clone(&self.clients);
         let s = Arc::clone(&self.stopped);
+        let d = Arc::clone(&self.debug);
         thread::spawn(move || loop {
             loop {
                 thread::sleep(Duration::from_secs(5));
@@ -168,6 +169,10 @@ impl LoadBalancer {
                     }
 
                     if clients[i].read().unwrap().is_client_connected() == false {
+                        if *d.read().unwrap() {
+                            println!("[Cleaner ] Connection ended cleaned ({})", clients[i].read().unwrap().address);
+                        }
+
                         clients.remove(i);
                         len = len - 1;
                         continue;
