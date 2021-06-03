@@ -68,7 +68,7 @@ fn main() -> Result<()> {
             Ok(str) => {
                 balancer.add_client(str);
             }
-            // because we are not blocking (to exit gracefully), we need to ignore non-blocking errors
+            // because we are not blocking we need to ignore non-blocking errors
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
             // handle actual errors here
             Err(err) => {
@@ -77,7 +77,7 @@ fn main() -> Result<()> {
         }
 
         if *should_cancel.lock().unwrap() == true {
-            println!("Listening stopped");
+            println!("[Listener] Listening stopped");
             balancer.stop();
 
             // sleep a bit to allow all threads to exit gracefully

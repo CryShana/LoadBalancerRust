@@ -28,7 +28,7 @@ impl LoadBalancer {
             balancing_algorithm: Arc::new(Mutex::new(balancing_algorithm)),
         };
 
-        b.spawn_workers();
+        b.spawn_threads();
 
         b
     }
@@ -42,16 +42,16 @@ impl LoadBalancer {
         *self.stopped.write().unwrap() = true;
     }
 
-    fn spawn_workers(&mut self) {
+    fn spawn_threads(&mut self) {
         let th = self.threads as u32;
 
+        // SPAWN WORKERS
         for id in 0..th {
             let c = Arc::clone(&self.clients);
             let s = Arc::clone(&self.stopped);
             let d = Arc::clone(&self.debug);
             let b = Arc::clone(&self.balancing_algorithm);
 
-            // SPAWN PROCESSORS
             thread::spawn(move || loop {
                 thread::sleep(SLEEP_TIME);
 
@@ -145,6 +145,10 @@ impl LoadBalancer {
         thread::spawn(move || loop {
             loop {
                 thread::sleep(Duration::from_secs(5));
+                let stopped = *s.read().unwrap();
+                if stopped == true {
+                    break;
+                }
 
                 let mut clients = c.write().unwrap();
                 let mut len = clients.len();
@@ -162,11 +166,6 @@ impl LoadBalancer {
                     }
 
                     i = i + 1;
-                }
-
-                let stopped = *s.read().unwrap();
-                if stopped == true {
-                    break;
                 }
             }
         });
