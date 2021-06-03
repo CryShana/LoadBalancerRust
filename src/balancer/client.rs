@@ -90,24 +90,6 @@ impl TcpClient {
             self.connection_started_time = Instant::now() + timeout;
         }
 
-        // check if client still connected
-        let mut buf: [u8; 1] = [0; 1];
-        match self.stream.peek(&mut buf) {
-            Ok(r) => {
-                if r == 0 {
-                    // connection to client lost
-                    self.close_connection();
-                    return Ok(false);
-                }
-            }
-            Err(ref e) if e.kind() == ErrorKind::WouldBlock => {}
-            Err(e) => {
-                // connection to client lost
-                self.close_connection();
-                return Ok(false);
-            }
-        }
-
         // use the previously initialized target and socket (target parameter is ignored when client is connecting)
         let socket = self.target_stream.as_ref().unwrap();
         let target = self.target.unwrap();
