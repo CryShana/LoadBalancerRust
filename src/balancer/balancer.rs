@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::time::Instant;
 use std::usize;
 use std::{net::TcpStream, thread, time::Duration, u16};
 
@@ -15,6 +16,9 @@ const CONNECTION_TIMEOUT: Duration = Duration::from_millis(400);
 
 // this is used between processing loops
 const SLEEP_TIME: Duration = Duration::from_millis(4);
+
+// the amount of time threads will go without sleeping after being activated
+const AWAKE_TIME: Duration = Duration::from_secs(1);
 
 pub struct LoadBalancer {
     clients: Arc<RwLock<Vec<Arc<RwLock<TcpClient>>>>>,
@@ -58,120 +62,132 @@ impl LoadBalancer {
             let d = Arc::clone(&self.debug);
             let b = Arc::clone(&self.balancing_algorithm);
 
-            thread::spawn(move || loop {
-                thread::sleep(SLEEP_TIME);
+            thread::spawn(move || {
+                let mut sleep_time = Instant::now();
 
-                // HANDLE CLIENTS
-                {
-                    let clients = &*c.read().unwrap();
-                    let length = clients.len() as u32;
-                    let mut capacity = length / th;
-
-                    // if there are less clients than threads, we can let the first thread handle all of them
-                    if length < th {
-                        if id == 0 {
-                            // first thread will take on all of them
-                            capacity = length;
-                        } else {
-                            // other threads are ignored for now
-                            continue;
-                        }
+                loop {
+                    if Instant::now() > sleep_time {
+                        thread::sleep(SLEEP_TIME);
                     }
 
-                    // every thread starts at a specified index and handles [capacity] clients
-                    let starting_index = id * capacity;
-                    let mut end_index = starting_index + capacity; // exclusive
-                    if id == th - 1 {
-                        // if this is the last thread, just handle all of rest
-                        end_index = length;
-                    }
+                    // HANDLE CLIENTS
+                    {
+                        let clients = &*c.read().unwrap();
+                        let length = clients.len() as u32;
+                        let mut capacity = length / th;
 
-                    // handle clients
-                    for i in starting_index..end_index {
-                        let mut client = match clients.get(i as usize) {
-                            Some(client) => client.write().unwrap(),
-                            None => {
-                                if *d.read().unwrap() {
-                                    println!("[Thread {}] Cancelled early because collection changed", id);
-                                }
-                                break;
+                        // if there are less clients than threads, we can let the first thread handle all of them
+                        if length < th {
+                            if id == 0 {
+                                // first thread will take on all of them
+                                capacity = length;
+                            } else {
+                                // other threads are ignored for now
+                                continue;
                             }
-                        };
-
-                        // ignore clients that are no longer connected
-                        if client.is_client_connected() == false {
-                            continue;
                         }
 
-                        // handle client
-                        if client.is_connected() {
-                            let success = client.process();
-                            if success == false {
-                                // connection to either server or client has failed
+                        // every thread starts at a specified index and handles [capacity] clients
+                        let starting_index = id * capacity;
+                        let mut end_index = starting_index + capacity; // exclusive
+                        if id == th - 1 {
+                            // if this is the last thread, just handle all of rest
+                            end_index = length;
+                        }
 
-                                // removal from list is handled later
-                                if *d.read().unwrap() {
-                                    println!("[Thread {}] Connection ended ({})", id, client.address);
-                                }
-
-                                // report host error to host manager
-                                let last_t = client.get_last_target_addr();
-                                if client.last_target_errored() && last_t.is_some() {
-                                    b.write().unwrap().report_error(last_t.unwrap());
-                                }
-                            }
-                        } else {
-                            // determine target host to connect to, using the balancing algorithm!
-                            let target_socket = match client.get_target_addr() {
-                                Some(s) => s,
-                                None => b.write().unwrap().get_next_host(),
-                            };
-
-                            if *d.read().unwrap() && !client.is_connecting() {
-                                println!("[Thread {}] Connecting client ({} -> {})", id, client.address, target_socket);
-                            }
-
-                            // connect to target
-                            let success = match client.connect_to_target(target_socket, CONNECTION_TIMEOUT, TOTAL_CONNECTION_TIMEOUT) {
-                                Ok(s) => s,
-                                Err(e) => {
-                                    println!(
-                                        "[Thread {}] Unexpected error while trying to connect! {} ({} -> {})",
-                                        id,
-                                        e.to_string(),
-                                        client.address,
-                                        target_socket
-                                    );
-                                    false
+                        // handle clients
+                        for i in starting_index..end_index {
+                            let mut client = match clients.get(i as usize) {
+                                Some(client) => client.write().unwrap(),
+                                None => {
+                                    if *d.read().unwrap() {
+                                        println!("[Thread {}] Cancelled early because collection changed", id);
+                                    }
+                                    break;
                                 }
                             };
 
-                            if *d.read().unwrap() {
-                                if success {
-                                    println!("[Thread {}] Client connected ({} -> {})", id, client.address, target_socket);
-                                }
+                            // ignore clients that are no longer connected
+                            if client.is_client_connected() == false {
+                                continue;
                             }
 
-                            if !success {
-                                // report host error to host manager
-                                let last_t = client.get_last_target_addr();
-                                if client.last_target_errored() && last_t.is_some() {
-                                    b.write().unwrap().report_error(last_t.unwrap());
+                            // handle client
+                            if client.is_connected() {
+                                let (success, has_processed) = client.process();
+
+                                if has_processed {
+                                    // we wake up the thread
+                                    sleep_time = Instant::now() + AWAKE_TIME;
+                                }
+
+                                if success == false {
+                                    // connection to either server or client has failed
+
+                                    // removal from list is handled later
+                                    if *d.read().unwrap() {
+                                        println!("[Thread {}] Connection ended ({})", id, client.address);
+                                    }
+
+                                    // report host error to host manager
+                                    let last_t = client.get_last_target_addr();
+                                    if client.last_target_errored() && last_t.is_some() {
+                                        b.write().unwrap().report_error(last_t.unwrap());
+                                    }
                                 }
                             } else {
-                                // report success if connection succeeded - we first check if it's even necessary before taking WRITE access for the balancer
-                                if b.read().unwrap().is_on_cooldown(target_socket) {
-                                    b.write().unwrap().report_success(target_socket);
+                                // determine target host to connect to, using the balancing algorithm!
+                                let target_socket = match client.get_target_addr() {
+                                    Some(s) => s,
+                                    None => b.write().unwrap().get_next_host(),
+                                };
+
+                                if *d.read().unwrap() && !client.is_connecting() {
+                                    println!("[Thread {}] Connecting client ({} -> {})", id, client.address, target_socket);
+                                }
+
+                                // connect to target
+                                let success = match client.connect_to_target(target_socket, CONNECTION_TIMEOUT, TOTAL_CONNECTION_TIMEOUT) {
+                                    Ok(s) => s,
+                                    Err(e) => {
+                                        println!(
+                                            "[Thread {}] Unexpected error while trying to connect! {} ({} -> {})",
+                                            id,
+                                            e.to_string(),
+                                            client.address,
+                                            target_socket
+                                        );
+                                        false
+                                    }
+                                };
+
+                                if *d.read().unwrap() {
+                                    if success {
+                                        println!("[Thread {}] Client connected ({} -> {})", id, client.address, target_socket);
+                                    }
+                                }
+
+                                if !success {
+                                    // report host error to host manager
+                                    let last_t = client.get_last_target_addr();
+                                    if client.last_target_errored() && last_t.is_some() {
+                                        b.write().unwrap().report_error(last_t.unwrap());
+                                    }
+                                } else {
+                                    // report success if connection succeeded - we first check if it's even necessary before taking WRITE access for the balancer
+                                    if b.read().unwrap().is_on_cooldown(target_socket) {
+                                        b.write().unwrap().report_success(target_socket);
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                // keep checking if balancer has been stopped
-                let stopped = *s.read().unwrap();
-                if stopped == true {
-                    break;
+                    // keep checking if balancer has been stopped
+                    let stopped = *s.read().unwrap();
+                    if stopped == true {
+                        break;
+                    }
                 }
             });
         }
