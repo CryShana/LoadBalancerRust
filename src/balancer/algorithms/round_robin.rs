@@ -31,4 +31,9 @@ impl BalancingAlgorithm for RoundRobin {
 
         val
     }
+
+    fn report_error(&mut self, addr: SocketAddr) {
+        // error marked
+        // TODO: put host on cooldown
+    }
 }

@@ -13,15 +13,18 @@ pub struct TcpClient {
     stream: TcpStream,
     buffer: [u8; 4096],
 
+    pub address: SocketAddr,
     target: Option<SocketAddr>,
     target_stream: Option<Socket>,
     is_connected: bool,
     is_connecting: bool,
     is_client_connected: bool,
-    pub address: SocketAddr,
     already_connected_code: i32,
     last_connection_loss: Instant,
     connection_started_time: Instant,
+
+    last_target: Option<SocketAddr>,
+    last_target_error: bool,
 }
 
 impl TcpClient {
@@ -53,11 +56,21 @@ impl TcpClient {
             already_connected_code: code,
             last_connection_loss: Instant::now(),
             connection_started_time: Instant::now(),
+            last_target: None,
+            last_target_error: false,
         }
     }
 
     pub fn get_target_addr(&self) -> Option<SocketAddr> {
         self.target
+    }
+
+    pub fn get_last_target_addr(&self) -> Option<SocketAddr> {
+        self.last_target
+    }
+
+    pub fn last_target_errored(&self) -> bool {
+        self.last_target_error
     }
 
     pub fn is_connected(&self) -> bool {
@@ -132,7 +145,7 @@ impl TcpClient {
         };
     }
 
-    fn set_connected(&mut self){
+    fn set_connected(&mut self) {
         self.is_connected = true;
         self.is_connecting = false;
     }
@@ -160,7 +173,7 @@ impl TcpClient {
                 Ok(_) => {}
                 Err(_) => {
                     // error with connection to server
-                    self.close_connection_to_target(true);  
+                    self.close_connection_to_target(true);
                     return false;
                 }
             }
@@ -199,6 +212,7 @@ impl TcpClient {
     }
 
     fn close_connection_to_target(&mut self, target_errored: bool) {
+        // if connected to target, disconnect - mark last connection loss
         if self.is_connected {
             let str = self.target_stream.as_ref().unwrap();
             str.shutdown(Shutdown::Both).unwrap_or(());
@@ -206,6 +220,16 @@ impl TcpClient {
             self.last_connection_loss = Instant::now();
         }
 
+        // mark error
+        if target_errored {
+            self.last_target = self.target;
+            self.last_target_error = true;
+        } else {
+            self.last_target = None;
+            self.last_target_error = false;
+        }
+
+        // reset
         self.target = None;
         self.target_stream = None;
 

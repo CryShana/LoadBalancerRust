@@ -114,6 +114,12 @@ impl LoadBalancer {
                                 if *d.read().unwrap() {
                                     println!("[Thread {}] Connection ended ({})", id, client.address);
                                 }
+
+                                // report host error to host manager
+                                let last_t = client.get_last_target_addr();
+                                if client.last_target_errored() && last_t.is_some() {
+                                    b.lock().unwrap().report_error(last_t.unwrap());
+                                }
                             }
                         } else {
                             // determine target host to connect to, using the balancing algorithm!
@@ -130,14 +136,28 @@ impl LoadBalancer {
                             let success = match client.connect_to_target(target_socket, CONNECTION_TIMEOUT, TOTAL_CONNECTION_TIMEOUT) {
                                 Ok(s) => s,
                                 Err(e) => {
-                                    println!("Error while trying to connect! {}", e.to_string());
-                                    continue;
+                                    println!(
+                                        "[Thread {}] Unexpected error while trying to connect! {} ({} -> {})",
+                                        id,
+                                        e.to_string(),
+                                        client.address,
+                                        target_socket
+                                    );
+                                    false
                                 }
                             };
 
                             if *d.read().unwrap() {
                                 if success {
                                     println!("[Thread {}] Client connected ({} -> {})", id, client.address, target_socket);
+                                }
+                            }
+
+                            if !success {
+                                // report host error to host manager
+                                let last_t = client.get_last_target_addr();
+                                if client.last_target_errored() && last_t.is_some() {
+                                    b.lock().unwrap().report_error(last_t.unwrap());
                                 }
                             }
                         }
@@ -175,7 +195,7 @@ impl LoadBalancer {
 
                     if clients[i].read().unwrap().is_client_connected() == false {
                         if *d.read().unwrap() {
-                            println!("[Cleaner ] Connection ended cleaned ({})", clients[i].read().unwrap().address);
+                            println!("[Cleaner ] Connection ended and cleaned ({})", clients[i].read().unwrap().address);
                         }
 
                         clients.remove(i);
