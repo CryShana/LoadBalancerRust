@@ -9,13 +9,16 @@ use std::time::Duration;
 
 mod balancer;
 use balancer::{HostManager, LoadBalancer};
+use mio::net::TcpListener;
 use mio::Events;
 use mio::Interest;
 use mio::Poll;
 use mio::Token;
-use mio::net::TcpListener;
 
 use crate::balancer::RoundRobin;
+
+const SERVER_TOKEN: Token = Token(0);
+const CLIENT_TOKEN: Token = Token(1);
 
 fn main() -> Result<()> {
     // PARSE HOSTS
@@ -48,8 +51,9 @@ fn main() -> Result<()> {
     };
 
     // BIND TO LISTENING PORT
+
     let mut poll = Poll::new()?;
-    let mut events = Events::with_capacity(128);
+    let mut events = Events::with_capacity(1024);
 
     let addr = match format!("0.0.0.0:{}", listening_port).parse() {
         Ok(a) => a,
@@ -67,10 +71,7 @@ fn main() -> Result<()> {
         }
     };
 
-    const SERVER_TOKEN: Token = Token(0);
     poll.registry().register(&mut listener, SERVER_TOKEN, Interest::READABLE)?;
-
-    //listener.set_nonblocking(true).expect("Failed to put listener into non-blocking mode!");
 
     // START LISTENING
     loop {
@@ -82,7 +83,7 @@ fn main() -> Result<()> {
                 balancer.stop();
 
                 println!("[Listener] Listening stopped");
-                
+
                 // sleep a bit to allow all threads to exit gracefully
                 thread::sleep(Duration::from_millis(4));
 
@@ -97,9 +98,27 @@ fn main() -> Result<()> {
         for event in events.iter() {
             match event.token() {
                 SERVER_TOKEN => {
-                    let connection = listener.accept()?;
+                    // listener accepted a new client
+                    let mut connection = listener.accept()?;
+
+                    poll.registry()
+                        .register(&mut connection.0, CLIENT_TOKEN, Interest::READABLE | Interest::WRITABLE)?;
+
                     balancer.add_client(connection.0);
-                },
+                }
+                CLIENT_TOKEN => {
+                    // notify balancer of a change, wake it up
+
+                    if event.is_writable() {
+                        // We can (likely) write to the socket without blocking.
+                    }
+
+                    if event.is_readable() {
+                        // We can (likely) read from the socket without blocking.
+                    }
+
+                    balancer.wake_up();
+                }
                 _ => {}
             }
         }

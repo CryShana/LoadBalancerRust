@@ -1,11 +1,9 @@
+use std::io::Result;
 use std::sync::Arc;
 use std::sync::RwLock;
-use std::time::Instant;
 use std::usize;
 use std::{thread, time::Duration, u16};
 
-use mio::Events;
-use mio::Poll;
 use mio::net::TcpStream;
 
 use super::BalancingAlgorithm;
@@ -23,7 +21,7 @@ pub struct LoadBalancer {
     stopped: Arc<RwLock<bool>>,
     debug: Arc<RwLock<bool>>,
     threads: u16,
-    balancing_algorithm: Arc<RwLock<RoundRobin>>,
+    balancing_algorithm: Arc<RwLock<RoundRobin>>
 }
 
 impl LoadBalancer {
@@ -33,7 +31,7 @@ impl LoadBalancer {
             stopped: Arc::new(RwLock::new(false)),
             debug: Arc::new(RwLock::new(debug)),
             threads,
-            balancing_algorithm: Arc::new(RwLock::new(balancing_algorithm)),
+            balancing_algorithm: Arc::new(RwLock::new(balancing_algorithm))
         };
 
         b.spawn_threads();
@@ -50,10 +48,14 @@ impl LoadBalancer {
         *self.stopped.write().unwrap() = true;
     }
 
+    pub fn wake_up(&mut self) {
+
+    }
+
     fn spawn_threads(&mut self) {
         let th = self.threads as u32;
 
-        // SPAWN WORKERS
+        // WORKERS
         for id in 0..th {
             let c = Arc::clone(&self.clients);
             let s = Arc::clone(&self.stopped);
@@ -61,9 +63,6 @@ impl LoadBalancer {
             let b = Arc::clone(&self.balancing_algorithm);
 
             thread::spawn(move || {
-                let mut poll = Poll::new().unwrap();
-                let mut events = Events::with_capacity(1024);
-
                 loop {
                     // HANDLE CLIENTS
                     {
@@ -182,7 +181,7 @@ impl LoadBalancer {
             });
         }
 
-        // SPAWN CLEANER - will clean disconnected clients from vector
+        // CLEANER - will clean disconnected clients from vector
         let c = Arc::clone(&self.clients);
         let s = Arc::clone(&self.stopped);
         let d = Arc::clone(&self.debug);
@@ -205,7 +204,7 @@ impl LoadBalancer {
 
                     if clients[i].read().unwrap().is_client_connected() == false {
                         if *d.read().unwrap() {
-                            println!("[Cleaner ] Connection ended and cleaned ({})", clients[i].read().unwrap().address);
+                            println!("[Cleaner] Connection ended and cleaned ({})", clients[i].read().unwrap().address);
                         }
 
                         clients.remove(i);
