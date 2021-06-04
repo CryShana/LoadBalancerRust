@@ -1,17 +1,10 @@
 use std::sync::Arc;
-use std::sync::Condvar;
-use std::sync::Mutex;
 use std::sync::RwLock;
 use std::usize;
 use std::{thread, time::Duration, u16};
 
 use mio::net::TcpStream;
-use mio::Interest;
-use mio::Poll;
-use mio::Token;
-
 use super::BalancingAlgorithm;
-use super::Poller;
 use super::RoundRobin;
 use super::TcpClient;
 
@@ -27,8 +20,6 @@ pub struct LoadBalancer {
     stopped: Arc<RwLock<bool>>,
     debug: Arc<RwLock<bool>>,
     balancing_algorithm: Arc<RwLock<RoundRobin>>,
-    notified: Arc<(Mutex<bool>, Condvar)>,
-    poll: Option<Arc<RwLock<Poll>>>,
 }
 
 impl LoadBalancer {
@@ -39,15 +30,9 @@ impl LoadBalancer {
             stopped: Arc::new(RwLock::new(false)),
             debug: Arc::new(RwLock::new(debug)),
             balancing_algorithm: Arc::new(RwLock::new(balancing_algorithm)),
-            notified: Arc::new((Mutex::new(false), Condvar::new())),
-            poll: None,
         };
 
         b
-    }
-
-    pub fn register_poll(&mut self, poll: Arc<RwLock<Poll>>) {
-        self.poll = Some(poll);
     }
 
     pub fn start(&mut self) {
@@ -63,19 +48,6 @@ impl LoadBalancer {
         *self.stopped.write().unwrap() = true;
     }
 
-    pub fn wake_up(&self) {
-        let (mutex, cvar) = &*self.notified;
-        let mut mutexguard = mutex.lock().unwrap();
-        *mutexguard = true;
-        cvar.notify_all();
-    }
-
-    pub fn sleep(&self) {
-        let (mutex, _) = &*self.notified;
-        let mut mutexguard = mutex.lock().unwrap();
-        *mutexguard = false;
-    }
-
     fn spawn_threads(&mut self) {
         let th = self.threads as u32;
 
@@ -85,24 +57,9 @@ impl LoadBalancer {
             let s = Arc::clone(&self.stopped);
             let d = Arc::clone(&self.debug);
             let b = Arc::clone(&self.balancing_algorithm);
-            let n = Arc::clone(&self.notified);
-
-            let poll = &self.poll.as_ref().unwrap();
-            let p = Arc::clone(poll);
 
             thread::spawn(move || {
                 loop {
-                    // BLOCK UNTIL NOTIFIED TO WAKE UP
-                    {
-                        let (mutex, cvar) = &*n;
-                        let mut mutexguard = mutex.lock().unwrap();
-                        // As long as the value inside the `Mutex<bool>` is `false`, we wait.
-                        while !*mutexguard {
-                            mutexguard = cvar.wait(mutexguard).unwrap();
-                        }
-                    }
-                    //println!("ENTERED {}", id);
-
                     // HANDLE CLIENTS
                     {
                         let clients = &*c.read().unwrap();
@@ -189,25 +146,23 @@ impl LoadBalancer {
                                     }
                                 };
 
-                                if *d.read().unwrap() {
-                                    if success {
+                                if success {
+                                    // connection to target host succeeded!                                 
+                                    if *d.read().unwrap() {
                                         println!("[Thread {}] Client connected ({} -> {})", id, client.address, target_socket);
                                     }
-                                }
 
-                                if !success {
-                                    // report host error to host manager
-                                    let last_t = client.get_last_target_addr();
-                                    if client.last_target_errored() && last_t.is_some() {
-                                        b.write().unwrap().report_error(last_t.unwrap());
-                                    }
-                                } else {
-                                    // add to poll                                 
-                                    client.register_target_for_poll(Arc::clone(&p));
+                                    // TODO: add to poll
 
                                     // report success if connection succeeded - we first check if it's even necessary before taking WRITE access for the balancer
                                     if b.read().unwrap().is_on_cooldown(target_socket) {
                                         b.write().unwrap().report_success(target_socket);
+                                    }
+                                } else {
+                                    // report host error to host manager
+                                    let last_t = client.get_last_target_addr();
+                                    if client.last_target_errored() && last_t.is_some() {
+                                        b.write().unwrap().report_error(last_t.unwrap());
                                     }
                                 }
                             }
