@@ -64,7 +64,7 @@ impl Poller {
             let mut events = self.events.write().unwrap();
 
             // POLL FOR EVENTS HERE
-            match self.poll.write().unwrap().poll(&mut events, None) {
+            match self.poll.write().unwrap().poll(&mut events, Some(Duration::from_millis(5))) {
                 Ok(_) => {}
                 Err(ref e) if e.kind() == ErrorKind::Interrupted => {
                     *self.should_cancel.write().unwrap() = true;
@@ -82,6 +82,10 @@ impl Poller {
                     break;
                 }
             };
+
+            if events.is_empty() {
+                continue;
+            }
 
             // iterate through events
             let mut wake_up = false;
