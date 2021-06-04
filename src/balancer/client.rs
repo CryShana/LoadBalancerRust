@@ -132,7 +132,6 @@ impl TcpClient {
         match stream.peer_addr() {
             Ok(s) => s,
             Err(_) => {
-                self.close_connection_to_target(true);
                 return Ok(false);
             }
         };
