@@ -2,20 +2,15 @@ use std::io::prelude::*;
 use std::io::Result;
 use std::net::Shutdown;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::sync::RwLock;
+
 use std::time::Duration;
 use std::time::Instant;
 
 use mio::net::TcpSocket;
 use mio::net::TcpStream;
-use mio::Interest;
-use mio::Poll;
-
-use super::Poller;
 
 pub struct TcpClient {
-    stream: TcpStream,
+    pub stream: TcpStream,
     buffer: [u8; 4096],
 
     pub address: SocketAddr,
