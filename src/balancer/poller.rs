@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
-use mio::net::{SocketAddr, TcpListener};
+use mio::net::{SocketAddr, TcpListener, TcpStream};
 use mio::{Events, Interest, Poll, Token};
 
 use super::LoadBalancer;
@@ -48,7 +48,7 @@ impl Poller {
 
         let mut listener = TcpListener::bind(addr)?;
 
-        self.poll.read().unwrap().registry().register(&mut listener, SERVER_TOKEN, Interest::READABLE)?;
+        self.register_for_polling(&mut listener, SERVER_TOKEN, Interest::READABLE)?;
 
         // START LISTENING
         println!("[Listener] Started listening on port {}", listening_port);
@@ -83,11 +83,7 @@ impl Poller {
                         // listener accepted a new client
                         let mut connection = listener.accept()?;
 
-                        self.poll
-                            .read()
-                            .unwrap()
-                            .registry()
-                            .register(&mut connection.0, CLIENT_TOKEN, Interest::READABLE | Interest::WRITABLE)?;
+                        self.register_for_polling(&mut connection.0, CLIENT_TOKEN, Interest::READABLE | Interest::WRITABLE)?;
 
                         self.balancer.add_client(connection.0);
                     }
@@ -103,6 +99,15 @@ impl Poller {
                 self.balancer.wake_up();
             }
         }
+
+        Ok(())
+    }
+
+    pub fn register_for_polling<S>(&self, stream: &mut S, token: Token, interest: Interest) -> Result<()>
+    where
+        S: mio::event::Source,
+    {
+        self.poll.read().unwrap().registry().register(stream, token, interest)?;
 
         Ok(())
     }
