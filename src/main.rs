@@ -74,6 +74,7 @@ fn main() -> Result<()> {
     poll.registry().register(&mut listener, SERVER_TOKEN, Interest::READABLE)?;
 
     // START LISTENING
+    println!("[Listener] Started listening on port {}", listening_port);
     loop {
         // POLL FOR EVENTS HERE
         match poll.poll(&mut events, None) {
