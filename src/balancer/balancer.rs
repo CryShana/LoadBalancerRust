@@ -77,12 +77,16 @@ impl LoadBalancer {
             let n = Arc::clone(&self.notified);
             thread::spawn(move || {
                 loop {
-                    let (mutex, cvar) = &*n;
-                    let mut mutexguard = mutex.lock().unwrap();
-                    // As long as the value inside the `Mutex<bool>` is `false`, we wait.
-                    while !*mutexguard {
-                        mutexguard = cvar.wait(mutexguard).unwrap();
+                    // BLOCK UNTIL NOTIFIED TO WAKE UP
+                    {
+                        let (mutex, cvar) = &*n;
+                        let mut mutexguard = mutex.lock().unwrap();
+                        // As long as the value inside the `Mutex<bool>` is `false`, we wait.
+                        while !*mutexguard {
+                            mutexguard = cvar.wait(mutexguard).unwrap();
+                        }
                     }
+                    //println!("ENTERED {}", id);
 
                     // HANDLE CLIENTS
                     {
