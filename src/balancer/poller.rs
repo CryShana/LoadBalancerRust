@@ -43,10 +43,9 @@ impl Poller {
         let addr = format!("0.0.0.0:{}", listening_port).parse().unwrap();
         let mut listener = TcpListener::bind(addr)?;
 
-        let server_token = Token(0);
         let mut poll = Poll::new().unwrap();
         let mut events = Events::with_capacity(512);
-        poll.registry().register(&mut listener, server_token, Interest::READABLE)?;
+        poll.registry().register(&mut listener, Token(0), Interest::READABLE)?;
 
         // START LISTENING
         println!("[Listener] Started listening on port {}", listening_port);
@@ -79,9 +78,9 @@ impl Poller {
 
             for event in events.iter() {
                 match event.token() {
-                    server_token => {
+                    _ => {
                         // listener accepted a new client
-                        let mut connection = listener.accept()?;
+                        let connection = listener.accept()?;
                         self.balancer.add_client(connection.0);
                     }
                 }
