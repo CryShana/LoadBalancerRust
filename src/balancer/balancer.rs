@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::sync::Condvar;
 use std::sync::Mutex;
 use std::sync::RwLock;
-use std::thread::Thread;
 use std::usize;
 use std::{thread, time::Duration, u16};
 
@@ -30,10 +29,10 @@ pub struct LoadBalancer {
 impl LoadBalancer {
     pub fn new(balancing_algorithm: RoundRobin, threads: u16, debug: bool) -> Self {
         let mut b = LoadBalancer {
+            threads,
             clients: Arc::new(RwLock::new(vec![])),
             stopped: Arc::new(RwLock::new(false)),
             debug: Arc::new(RwLock::new(debug)),
-            threads,
             balancing_algorithm: Arc::new(RwLock::new(balancing_algorithm)),
             notified: Arc::new((Mutex::new(false), Condvar::new())),
         };

@@ -2,9 +2,9 @@ use std::io::Result;
 use std::process::exit;
 
 mod balancer;
-use balancer::{HostManager, LoadBalancer};
 use balancer::Poller;
 use balancer::RoundRobin;
+use balancer::{HostManager, LoadBalancer};
 
 fn main() -> Result<()> {
     // PARSE HOSTS
@@ -40,7 +40,7 @@ fn get_port() -> Option<i32> {
     let listening_port = std::env::args().nth(1)?;
     let port: i32 = match listening_port.parse() {
         Ok(p) => p,
-        Err(_) => return None
+        Err(_) => return None,
     };
 
     if port <= 0 || port > 65535 {
