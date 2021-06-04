@@ -1,12 +1,8 @@
-use std::io::Error;
-use std::io::ErrorKind;
 use std::io::Result;
 use std::process::exit;
 
 mod balancer;
 use balancer::{HostManager, LoadBalancer};
-use mio::Token;
-
 use balancer::Poller;
 use balancer::RoundRobin;
 
