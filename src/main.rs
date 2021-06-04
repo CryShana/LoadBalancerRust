@@ -17,9 +17,7 @@ fn main() -> Result<()> {
     let debug_mode = true;
     let round_robin = RoundRobin::new(host_manager);
     let balancer = LoadBalancer::new(round_robin, 4, debug_mode);
-
     let mut poller = Poller::new(balancer);
-    poller.initialize()?;
 
     // PARSE PORT
     let port = get_port().unwrap_or_else(|| {

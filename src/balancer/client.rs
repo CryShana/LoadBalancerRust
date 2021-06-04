@@ -60,16 +60,6 @@ impl TcpClient {
         self.last_target
     }
 
-    pub fn register_target_for_poll(&mut self, poll: Arc<RwLock<Poll>>) {
-        let s = self.target_stream.as_mut().unwrap();
-
-        poll.read()
-            .unwrap()
-            .registry()
-            .register(s, Poller::get_client_token(), Interest::READABLE | Interest::WRITABLE)
-            .unwrap();
-    }
-
     pub fn last_target_errored(&self) -> bool {
         self.last_target_error
     }
