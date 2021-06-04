@@ -153,9 +153,8 @@ impl TcpClient {
         Reads from client and forwards it to server. First boolean represents processing success, will be [false] when connection to either client or server fails.
         Second boolean represents if any processing has actually been done, if no data has been read or written, [false] will be returned.
     */
-    pub fn process(&mut self) -> (bool, bool) {
+    pub fn process(&mut self) -> bool {
         let mut str = self.target_stream.as_ref().unwrap();
-        let mut has_processed = false;
 
         // READ FROM CLIENT
         let read: i32 = match self.stream.read(&mut self.buffer) {
@@ -164,25 +163,23 @@ impl TcpClient {
             Err(_) => {
                 // error with connection to client
                 self.close_connection();
-                return (false, has_processed);
+                return false;
             }
         };
 
         // WRITE TO SERVER
         if read > 0 {
             match str.write(&self.buffer[..(read as usize)]) {
-                Ok(_) => {
-                    has_processed = true;
-                }
+                Ok(_) => {}
                 Err(_) => {
                     // error with connection to server
                     self.close_connection_to_target(true);
-                    return (false, has_processed);
+                    return false;
                 }
             }
         } else if read == 0 {
             self.close_connection();
-            return (false, has_processed);
+            return false;
         }
 
         // READ FROM SERVER
@@ -192,28 +189,26 @@ impl TcpClient {
             Err(_) => {
                 // error with connection to server
                 self.close_connection_to_target(true);
-                return (false, has_processed);
+                return false;
             }
         };
 
         // WRITE TO CLIENT
         if reads > 0 {
             match self.stream.write(&self.buffer[..(reads as usize)]) {
-                Ok(_) => {
-                    has_processed = true;
-                }
+                Ok(_) => {}
                 Err(_) => {
                     // error with connection to client
                     self.close_connection();
-                    return (false, has_processed);
+                    return false;
                 }
             };
         } else if reads == 0 {
             self.close_connection_to_target(false);
-            return (false, has_processed);
+            return false;
         }
 
-        return (true, has_processed);
+        return true;
     }
 
     fn close_connection_to_target(&mut self, target_errored: bool) {

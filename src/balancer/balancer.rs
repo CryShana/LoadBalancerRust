@@ -4,6 +4,8 @@ use std::time::Instant;
 use std::usize;
 use std::{thread, time::Duration, u16};
 
+use mio::Events;
+use mio::Poll;
 use mio::net::TcpStream;
 
 use super::BalancingAlgorithm;
@@ -15,12 +17,6 @@ const TOTAL_CONNECTION_TIMEOUT: Duration = Duration::from_millis(4000);
 
 // this is used as the timeout to connect to a target host
 const CONNECTION_TIMEOUT: Duration = Duration::from_millis(400);
-
-// this is used between processing loops
-const SLEEP_TIME: Duration = Duration::from_millis(4);
-
-// the amount of time threads will go without sleeping after being activated
-const AWAKE_TIME: Duration = Duration::from_secs(1);
 
 pub struct LoadBalancer {
     clients: Arc<RwLock<Vec<Arc<RwLock<TcpClient>>>>>,
@@ -65,13 +61,10 @@ impl LoadBalancer {
             let b = Arc::clone(&self.balancing_algorithm);
 
             thread::spawn(move || {
-                let mut sleep_time = Instant::now();
+                let mut poll = Poll::new().unwrap();
+                let mut events = Events::with_capacity(1024);
 
                 loop {
-                    if Instant::now() > sleep_time {
-                        thread::sleep(SLEEP_TIME);
-                    }
-
                     // HANDLE CLIENTS
                     {
                         let clients = &*c.read().unwrap();
@@ -116,12 +109,7 @@ impl LoadBalancer {
 
                             // handle client
                             if client.is_connected() {
-                                let (success, has_processed) = client.process();
-
-                                if has_processed {
-                                    // we wake up the thread
-                                    sleep_time = Instant::now() + AWAKE_TIME;
-                                }
+                                let success = client.process();
 
                                 if success == false {
                                     // connection to either server or client has failed
