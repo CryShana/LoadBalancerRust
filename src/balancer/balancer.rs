@@ -1,6 +1,8 @@
-use std::io::Result;
 use std::sync::Arc;
+use std::sync::Condvar;
+use std::sync::Mutex;
 use std::sync::RwLock;
+use std::thread::Thread;
 use std::usize;
 use std::{thread, time::Duration, u16};
 
@@ -21,7 +23,8 @@ pub struct LoadBalancer {
     stopped: Arc<RwLock<bool>>,
     debug: Arc<RwLock<bool>>,
     threads: u16,
-    balancing_algorithm: Arc<RwLock<RoundRobin>>
+    balancing_algorithm: Arc<RwLock<RoundRobin>>,
+    notified: Arc<(Mutex<bool>, Condvar)>,
 }
 
 impl LoadBalancer {
@@ -31,7 +34,8 @@ impl LoadBalancer {
             stopped: Arc::new(RwLock::new(false)),
             debug: Arc::new(RwLock::new(debug)),
             threads,
-            balancing_algorithm: Arc::new(RwLock::new(balancing_algorithm))
+            balancing_algorithm: Arc::new(RwLock::new(balancing_algorithm)),
+            notified: Arc::new((Mutex::new(false), Condvar::new())),
         };
 
         b.spawn_threads();
@@ -48,8 +52,17 @@ impl LoadBalancer {
         *self.stopped.write().unwrap() = true;
     }
 
-    pub fn wake_up(&mut self) {
+    pub fn wake_up(&self) {
+        let (mutex, cvar) = &*self.notified;
+        let mut mutexguard = mutex.lock().unwrap();
+        *mutexguard = true;
+        cvar.notify_all();
+    }
 
+    pub fn sleep(&self) {
+        let (mutex, _) = &*self.notified;
+        let mut mutexguard = mutex.lock().unwrap();
+        *mutexguard = false;
     }
 
     fn spawn_threads(&mut self) {
@@ -61,9 +74,16 @@ impl LoadBalancer {
             let s = Arc::clone(&self.stopped);
             let d = Arc::clone(&self.debug);
             let b = Arc::clone(&self.balancing_algorithm);
-
+            let n = Arc::clone(&self.notified);
             thread::spawn(move || {
                 loop {
+                    let (mutex, cvar) = &*n;
+                    let mut mutexguard = mutex.lock().unwrap();
+                    // As long as the value inside the `Mutex<bool>` is `false`, we wait.
+                    while !*mutexguard {
+                        mutexguard = cvar.wait(mutexguard).unwrap();
+                    }
+
                     // HANDLE CLIENTS
                     {
                         let clients = &*c.read().unwrap();
