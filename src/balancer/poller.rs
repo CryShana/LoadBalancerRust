@@ -65,7 +65,7 @@ impl Poller {
                     println!("[Listener] Listening stopped");
 
                     // sleep a bit to allow all threads to exit gracefully
-                    thread::sleep(Duration::from_millis(4));
+                    thread::sleep(Duration::from_millis(10));
 
                     break;
                 }
