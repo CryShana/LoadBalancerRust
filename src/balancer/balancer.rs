@@ -4,7 +4,6 @@ use std::time::Instant;
 use std::usize;
 use std::{thread, time::Duration, u16};
 
-use mio::net::SocketAddr;
 use mio::net::TcpStream;
 
 use super::BalancingAlgorithm;

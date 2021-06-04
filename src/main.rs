@@ -17,9 +17,6 @@ use mio::net::TcpListener;
 
 use crate::balancer::RoundRobin;
 
-const SLEEP_TIME: Duration = Duration::from_millis(4);
-const AWAKE_TIME: Duration = Duration::from_millis(500);
-
 fn main() -> Result<()> {
     // PARSE HOSTS
     let host_manager = HostManager::new("hosts");
@@ -70,7 +67,7 @@ fn main() -> Result<()> {
         }
     };
 
-    let SERVER_TOKEN = Token(0);
+    const SERVER_TOKEN: Token = Token(0);
     poll.registry().register(&mut listener, SERVER_TOKEN, Interest::READABLE)?;
 
     //listener.set_nonblocking(true).expect("Failed to put listener into non-blocking mode!");
@@ -87,7 +84,7 @@ fn main() -> Result<()> {
                 println!("[Listener] Listening stopped");
                 
                 // sleep a bit to allow all threads to exit gracefully
-                thread::sleep(SLEEP_TIME);
+                thread::sleep(Duration::from_millis(4));
 
                 break;
             }
@@ -102,7 +99,8 @@ fn main() -> Result<()> {
                 SERVER_TOKEN => {
                     let connection = listener.accept()?;
                     balancer.add_client(connection.0);
-                }
+                },
+                _ => {}
             }
         }
     }
