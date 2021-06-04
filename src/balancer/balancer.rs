@@ -202,9 +202,8 @@ impl LoadBalancer {
                                         b.write().unwrap().report_error(last_t.unwrap());
                                     }
                                 } else {
-                                    // add to poll
-                                    
-                                    //client.register_target_for_poll(Arc::clone(&p));
+                                    // add to poll                                 
+                                    client.register_target_for_poll(Arc::clone(&p));
 
                                     // report success if connection succeeded - we first check if it's even necessary before taking WRITE access for the balancer
                                     if b.read().unwrap().is_on_cooldown(target_socket) {
