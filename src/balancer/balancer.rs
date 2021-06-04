@@ -6,8 +6,12 @@ use std::usize;
 use std::{thread, time::Duration, u16};
 
 use mio::net::TcpStream;
+use mio::Interest;
+use mio::Poll;
+use mio::Token;
 
 use super::BalancingAlgorithm;
+use super::Poller;
 use super::RoundRobin;
 use super::TcpClient;
 
@@ -18,12 +22,13 @@ const TOTAL_CONNECTION_TIMEOUT: Duration = Duration::from_millis(4000);
 const CONNECTION_TIMEOUT: Duration = Duration::from_millis(400);
 
 pub struct LoadBalancer {
+    threads: u16,
     clients: Arc<RwLock<Vec<Arc<RwLock<TcpClient>>>>>,
     stopped: Arc<RwLock<bool>>,
     debug: Arc<RwLock<bool>>,
-    threads: u16,
     balancing_algorithm: Arc<RwLock<RoundRobin>>,
     notified: Arc<(Mutex<bool>, Condvar)>,
+    poll: Option<Arc<RwLock<Poll>>>,
 }
 
 impl LoadBalancer {
@@ -35,11 +40,18 @@ impl LoadBalancer {
             debug: Arc::new(RwLock::new(debug)),
             balancing_algorithm: Arc::new(RwLock::new(balancing_algorithm)),
             notified: Arc::new((Mutex::new(false), Condvar::new())),
+            poll: None,
         };
 
-        b.spawn_threads();
-
         b
+    }
+
+    pub fn register_poll(&mut self, poll: Arc<RwLock<Poll>>) {
+        self.poll = Some(poll);
+    }
+
+    pub fn start(&mut self) {
+        self.spawn_threads();
     }
 
     pub fn add_client(&mut self, stream: TcpStream) {
@@ -74,6 +86,10 @@ impl LoadBalancer {
             let d = Arc::clone(&self.debug);
             let b = Arc::clone(&self.balancing_algorithm);
             let n = Arc::clone(&self.notified);
+
+            let poll = &self.poll.as_ref().unwrap();
+            let p = Arc::clone(poll);
+
             thread::spawn(move || {
                 loop {
                     // BLOCK UNTIL NOTIFIED TO WAKE UP
@@ -186,6 +202,10 @@ impl LoadBalancer {
                                         b.write().unwrap().report_error(last_t.unwrap());
                                     }
                                 } else {
+                                    // add to poll
+                                    
+                                    //client.register_target_for_poll(Arc::clone(&p));
+
                                     // report success if connection succeeded - we first check if it's even necessary before taking WRITE access for the balancer
                                     if b.read().unwrap().is_on_cooldown(target_socket) {
                                         b.write().unwrap().report_success(target_socket);

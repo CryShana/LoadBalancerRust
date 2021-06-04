@@ -1,13 +1,18 @@
 use std::io::prelude::*;
-use std::io::ErrorKind;
 use std::io::Result;
 use std::net::Shutdown;
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::sync::RwLock;
 use std::time::Duration;
 use std::time::Instant;
 
+use mio::net::TcpSocket;
 use mio::net::TcpStream;
-use socket2::{Domain, Socket, Type};
+use mio::Interest;
+use mio::Poll;
+
+use super::Poller;
 
 pub struct TcpClient {
     stream: TcpStream,
@@ -15,11 +20,10 @@ pub struct TcpClient {
 
     pub address: SocketAddr,
     target: Option<SocketAddr>,
-    target_stream: Option<Socket>,
+    target_stream: Option<TcpStream>,
     is_connected: bool,
     is_connecting: bool,
     is_client_connected: bool,
-    already_connected_code: i32,
     last_connection_loss: Instant,
     connection_started_time: Instant,
 
@@ -29,19 +33,8 @@ pub struct TcpClient {
 
 impl TcpClient {
     pub fn new(stream: TcpStream) -> Self {
-
         let addr: SocketAddr = stream.peer_addr().unwrap();
         println!("[Listener] Connected from {}", addr.to_string());
-
-        // determine OS error code for "already connected socket"
-        let code;
-        let os = std::env::consts::OS;
-        if os == "windows" {
-            code = 10056;
-        } else {
-            // linux
-            code = 106;
-        }
 
         TcpClient {
             stream: stream,
@@ -52,7 +45,6 @@ impl TcpClient {
             is_connected: false,
             is_connecting: false,
             is_client_connected: true,
-            already_connected_code: code,
             last_connection_loss: Instant::now(),
             connection_started_time: Instant::now(),
             last_target: None,
@@ -66,6 +58,20 @@ impl TcpClient {
 
     pub fn get_last_target_addr(&self) -> Option<SocketAddr> {
         self.last_target
+    }
+
+    pub fn register_target_for_poll(&mut self, poll: Arc<RwLock<Poll>>) {
+        let s = self.target_stream.as_mut().unwrap();
+
+        println!("Adding to poll...");
+
+        poll.read()
+            .unwrap()
+            .registry()
+            .register(s, Poller::get_client_token(), Interest::READABLE | Interest::WRITABLE)
+            .unwrap();
+
+        println!("Added to poll");
     }
 
     pub fn last_target_errored(&self) -> bool {
@@ -89,23 +95,28 @@ impl TcpClient {
             self.close_connection_to_target(false);
 
             // prepare for new connection - initialize socket and set target
-            let mut domain = Domain::IPV4;
+            let socket: TcpSocket;
             if target.is_ipv6() {
-                domain = Domain::IPV6;
+                socket = TcpSocket::new_v6().unwrap();
+            } else {
+                socket = TcpSocket::new_v4().unwrap();
             }
 
-            let socket = Socket::new(domain, Type::STREAM, None)?;
-            socket.set_nonblocking(true)?;
+            let stream = match socket.connect(target) {
+                Ok(t) => t,
+                Err(_) => {
+                    return Ok(false);
+                }
+            };
 
             self.is_connecting = true;
             self.target = Some(target);
-            self.target_stream = Some(socket);
+            self.target_stream = Some(stream);
             self.connection_started_time = Instant::now() + timeout;
         }
 
         // use the previously initialized target and socket (target parameter is ignored when client is connecting)
-        let socket = self.target_stream.as_ref().unwrap();
-        let target = self.target.unwrap();
+        let stream = self.target_stream.as_ref().unwrap();
 
         // check if we timed out for this target
         if Instant::now() > self.connection_started_time {
@@ -118,30 +129,16 @@ impl TcpClient {
             return Ok(false);
         }
 
-        // initiate connection here
-        match socket.connect(&target.into()) {
-            Ok(()) => {
-                self.set_connected();
-                return Ok(true);
-            }
-            Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                return Ok(false);
-            }
-            Err(ref e) if e.kind() == ErrorKind::Other => {
-                let code = e.raw_os_error().unwrap_or(0);
-                if code != self.already_connected_code {
-                    // actual error
-                    return Ok(false);
-                }
-
-                self.set_connected();
-                return Ok(true);
-            }
+        match stream.peer_addr() {
+            Ok(s) => s,
             Err(_) => {
                 self.close_connection_to_target(true);
                 return Ok(false);
             }
         };
+
+        self.set_connected();
+        Ok(true)
     }
 
     fn set_connected(&mut self) {
@@ -243,7 +240,7 @@ impl TcpClient {
             let str = &self.stream;
             str.shutdown(Shutdown::Both).unwrap_or(());
             drop(str);
-            
+
             self.is_client_connected = false;
 
             // also close connection to target if connected - there is no reason to stay connected if client is not
