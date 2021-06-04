@@ -91,11 +91,12 @@ fn main() -> Result<()> {
                 break;
             }
             Err(e) => {
-                println!("Failed to poll for listener events! {}", e.to_string());
+                println!("Failed to poll for events! {}", e.to_string());
                 break;
             }
         };
 
+        let mut wake_up = false;
         for event in events.iter() {
             match event.token() {
                 SERVER_TOKEN => {
@@ -118,10 +119,16 @@ fn main() -> Result<()> {
                         // We can (likely) read from the socket without blocking.
                     }
 
-                    balancer.wake_up();
+                    wake_up = true;
                 }
                 _ => {}
             }
+        }
+
+        if wake_up {
+            balancer.wake_up();
+            thread::sleep(Duration::from_millis(5));
+            balancer.sleep();
         }
     }
 
