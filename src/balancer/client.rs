@@ -3,10 +3,10 @@ use std::io::ErrorKind;
 use std::io::Result;
 use std::net::Shutdown;
 use std::net::SocketAddr;
-use std::net::TcpStream;
 use std::time::Duration;
 use std::time::Instant;
 
+use mio::net::TcpStream;
 use socket2::{Domain, Socket, Type};
 
 pub struct TcpClient {
@@ -29,9 +29,8 @@ pub struct TcpClient {
 
 impl TcpClient {
     pub fn new(stream: TcpStream) -> Self {
-        stream.set_nonblocking(true).unwrap();
 
-        let addr = stream.peer_addr().unwrap();
+        let addr: SocketAddr = stream.peer_addr().unwrap();
         println!("[Listener] Connected from {}", addr.to_string());
 
         // determine OS error code for "already connected socket"
@@ -222,6 +221,7 @@ impl TcpClient {
         if self.is_connected {
             let str = self.target_stream.as_ref().unwrap();
             str.shutdown(Shutdown::Both).unwrap_or(());
+            drop(str);
 
             self.last_connection_loss = Instant::now();
         }
@@ -245,8 +245,10 @@ impl TcpClient {
 
     fn close_connection(&mut self) {
         if self.is_client_connected {
-            self.stream.shutdown(Shutdown::Both).unwrap_or(());
-
+            let str = &self.stream;
+            str.shutdown(Shutdown::Both).unwrap_or(());
+            drop(str);
+            
             self.is_client_connected = false;
 
             // also close connection to target if connected - there is no reason to stay connected if client is not

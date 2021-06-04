@@ -1,15 +1,19 @@
+use std::io::ErrorKind;
 use std::io::Result;
-use std::net::TcpListener;
 use std::process::exit;
 
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
-use std::time::Instant;
 
 mod balancer;
 use balancer::{HostManager, LoadBalancer};
+use mio::Events;
+use mio::Interest;
+use mio::Poll;
+use mio::Token;
+use mio::net::TcpListener;
 
 use crate::balancer::RoundRobin;
 
@@ -24,7 +28,7 @@ fn main() -> Result<()> {
     }
 
     // PREPARE THE LOAD BALANCER
-    let debug_mode = false;
+    let debug_mode = true;
     let number_of_threads = 4;
     let round_robin = RoundRobin::new(host_manager);
     let mut balancer = LoadBalancer::new(round_robin, number_of_threads, debug_mode);
@@ -47,43 +51,59 @@ fn main() -> Result<()> {
     };
 
     // BIND TO LISTENING PORT
-    let addr = format!("0.0.0.0:{}", listening_port);
-    let listener: TcpListener = match TcpListener::bind(addr) {
+    let mut poll = Poll::new()?;
+    let mut events = Events::with_capacity(128);
+
+    let addr = match format!("0.0.0.0:{}", listening_port).parse() {
+        Ok(a) => a,
+        Err(_) => {
+            println!("Invalid listening port provided!");
+            exit(1)
+        }
+    };
+
+    let mut listener = match TcpListener::bind(addr) {
         Ok(l) => l,
         Err(err) => {
             println!("Failed to bind to port {} -> {}", listening_port, err.to_string());
             exit(2);
         }
     };
-    listener.set_nonblocking(true).expect("Failed to put listener into non-blocking mode!");
+
+    let SERVER_TOKEN = Token(0);
+    poll.registry().register(&mut listener, SERVER_TOKEN, Interest::READABLE)?;
+
+    //listener.set_nonblocking(true).expect("Failed to put listener into non-blocking mode!");
 
     // START LISTENING
-    println!("[Listener] Started listening on port {}", listening_port);
-    let mut sleep_time = Instant::now();
-    for stream in listener.incoming() {
-        if Instant::now() > sleep_time {
-            thread::sleep(SLEEP_TIME);
-        }
+    loop {
+        // POLL FOR EVENTS HERE
+        match poll.poll(&mut events, None) {
+            Ok(_) => {}
+            Err(ref e) if e.kind() == ErrorKind::Interrupted => {
+                *should_cancel.lock().unwrap() = true;
+                balancer.stop();
 
-        match stream {
-            Ok(str) => {
-                balancer.add_client(str);
-                sleep_time = Instant::now() + AWAKE_TIME;
+                println!("[Listener] Listening stopped");
+                
+                // sleep a bit to allow all threads to exit gracefully
+                thread::sleep(SLEEP_TIME);
+
+                break;
             }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-            Err(err) => {
-                println!("Failed to accept connection! {}", err.to_string());
+            Err(e) => {
+                println!("Failed to poll for listener events! {}", e.to_string());
+                break;
             }
-        }
+        };
 
-        if *should_cancel.lock().unwrap() == true {
-            println!("[Listener] Listening stopped");
-            balancer.stop();
-
-            // sleep a bit to allow all threads to exit gracefully
-            thread::sleep(SLEEP_TIME);
-
-            break;
+        for event in events.iter() {
+            match event.token() {
+                SERVER_TOKEN => {
+                    let connection = listener.accept()?;
+                    balancer.add_client(connection.0);
+                }
+            }
         }
     }
 
