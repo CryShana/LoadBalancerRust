@@ -84,6 +84,7 @@ impl Poller {
             };
 
             if events.is_empty() {
+                self.balancer.sleep();
                 continue;
             }
 
