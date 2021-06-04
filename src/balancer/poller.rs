@@ -19,21 +19,29 @@ pub struct Poller {
 }
 
 impl Poller {
-    pub fn new(balancer: LoadBalancer) -> Self {
+    pub fn new(mut balancer: LoadBalancer) -> Self {
         let poll = Poll::new().unwrap();
         let events = Events::with_capacity(1024);
         let should_cancel = Arc::new(RwLock::new(false));
 
+        let poll = Arc::new(RwLock::new(poll));
+        balancer.register_poll(Arc::clone(&poll));
+        balancer.start();
+
         Poller {
-            poll: Arc::new(RwLock::new(poll)),
+            poll,
             events: Arc::new(RwLock::new(events)),
             balancer,
             should_cancel,
         }
     }
 
+    pub fn get_client_token() -> Token {
+        CLIENT_TOKEN
+    }
+
     pub fn initialize(&mut self) -> Result<()> {
-        // PREPARE THE CTRL+C HANDLER FOR GRACEFUL STOP
+        // prepare the ctrl+c handler for graceful stop
         let cancel = Arc::clone(&self.should_cancel);
         ctrlc::set_handler(move || {
             *cancel.write().unwrap() = true;
@@ -108,7 +116,6 @@ impl Poller {
         S: mio::event::Source,
     {
         self.poll.read().unwrap().registry().register(stream, token, interest)?;
-
         Ok(())
     }
 }
