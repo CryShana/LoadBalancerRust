@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
-use mio::net::{SocketAddr, TcpListener, TcpStream};
+use mio::net::{TcpListener};
 use mio::{Events, Interest, Poll, Token};
 
 use super::LoadBalancer;
