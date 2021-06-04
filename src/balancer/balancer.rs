@@ -2,7 +2,10 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use std::time::Instant;
 use std::usize;
-use std::{net::TcpStream, thread, time::Duration, u16};
+use std::{thread, time::Duration, u16};
+
+use mio::net::SocketAddr;
+use mio::net::TcpStream;
 
 use super::BalancingAlgorithm;
 use super::RoundRobin;
