@@ -33,7 +33,7 @@ pub struct LoadBalancer {
 
 impl LoadBalancer {
     pub fn new(balancing_algorithm: RoundRobin, threads: u16, debug: bool) -> Self {
-        let mut b = LoadBalancer {
+        let b = LoadBalancer {
             threads,
             clients: Arc::new(RwLock::new(vec![])),
             stopped: Arc::new(RwLock::new(false)),

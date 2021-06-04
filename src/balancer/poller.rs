@@ -61,21 +61,24 @@ impl Poller {
         // START LISTENING
         println!("[Listener] Started listening on port {}", listening_port);
         loop {
+            if *self.should_cancel.read().unwrap() {
+                self.balancer.stop();
+
+                println!("[Listener] Listening stopped");
+
+                // sleep a bit to allow all threads to exit gracefully
+                thread::sleep(Duration::from_millis(10));
+
+                break;
+            }
+
             let mut events = self.events.write().unwrap();
 
             // POLL FOR EVENTS HERE
             match self.poll.write().unwrap().poll(&mut events, Some(Duration::from_millis(5))) {
                 Ok(_) => {}
                 Err(ref e) if e.kind() == ErrorKind::Interrupted => {
-                    *self.should_cancel.write().unwrap() = true;
-                    self.balancer.stop();
-
-                    println!("[Listener] Listening stopped");
-
-                    // sleep a bit to allow all threads to exit gracefully
-                    thread::sleep(Duration::from_millis(10));
-
-                    break;
+                    *self.should_cancel.write().unwrap() = true;  
                 }
                 Err(e) => {
                     println!("Failed to poll for events! {}", e.to_string());
