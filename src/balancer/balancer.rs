@@ -153,10 +153,6 @@ impl LoadBalancer {
                             let index = (plen - 1) - i;
                             let mut client = pending.remove(index);
 
-                            poll.registry()
-                                .register(&mut client.stream, Token(0), Interest::READABLE | Interest::WRITABLE)
-                                .unwrap();
-
                             // get and increment token for client
                             let token = Token(next_token_id);
                             next_token_id += 1;
@@ -164,8 +160,41 @@ impl LoadBalancer {
                                 next_token_id = 1;
                             }
 
+                            poll.registry()
+                                .register(&mut client.stream, token, Interest::READABLE | Interest::WRITABLE)
+                                .unwrap();
+
                             // insert into hashmap for quick lookup
                             connected_sockets.insert(token, client);
+                        }
+
+                        // update count
+                        *client_counts.read().unwrap()[client_list_index].write().unwrap() = connected_sockets.len();
+                    }
+
+                    // check for connecting clients for time outs
+                    let mut tokens_to_remove: Vec<Box<Token>> = vec![];
+                    for (token, client) in &mut connected_sockets {
+                        if !client.is_connecting() {
+                            continue;
+                        }
+
+                        if client.started_connecting.elapsed() > CONNECTION_TIMEOUT {
+                            // we timed out!
+                            client.close_connection();
+                        }
+
+                        if !client.is_client_connected() {
+                            let t = Box::new(token.clone());
+                            tokens_to_remove.push(t);
+                        }
+                    }
+
+                    // check for no-longer connected clients
+                    if tokens_to_remove.len() > 0 {
+                        for token in tokens_to_remove {
+                            let mut client = connected_sockets.remove(&token).unwrap();
+                            poll.registry().deregister(&mut client.stream).unwrap();
                         }
 
                         // update count
@@ -184,22 +213,10 @@ impl LoadBalancer {
                                     Some(c) => c,
                                     None => {
                                         println!("ERROR - Tried getting client that was not present in hash map! -> token: {:?}", token);
-                                        // TODO: maybe deregister from poll?
+                                        // TODO: maybe deregister from poll if this is ever even called
                                         continue;
                                     }
                                 };
-
-                                // if client no longer connected, remove it
-                                if !client.is_client_connected() {
-                                    poll.registry().deregister(&mut client.stream).unwrap();
-
-                                    connected_sockets.remove(&token);
-
-                                    // update count
-                                    *client_counts.read().unwrap()[client_list_index].write().unwrap() = connected_sockets.len();
-
-                                    continue;
-                                }
 
                                 // if client is in process of connecting, check if connection has been established
                                 if client.is_connecting() {

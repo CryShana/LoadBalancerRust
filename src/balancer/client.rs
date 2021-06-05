@@ -22,8 +22,8 @@ pub struct TcpClient {
     is_connected: bool,
     is_connecting: bool,
     is_client_connected: bool,
-    last_connection_loss: Instant,
-
+    pub last_connection_loss: Instant,
+    pub started_connecting: Instant,
     last_target: Option<SocketAddr>,
     last_target_error: bool,
 }
@@ -43,6 +43,7 @@ impl TcpClient {
             is_connecting: false,
             is_client_connected: true,
             last_connection_loss: Instant::now(),
+            started_connecting: Instant::now(),
             last_target: None,
             last_target_error: false,
         }
@@ -101,6 +102,7 @@ impl TcpClient {
         self.is_connecting = true;
         self.target = Some(target);
         self.target_stream = Some(stream);
+        self.started_connecting = Instant::now();
 
         Ok(true)
     }
@@ -216,7 +218,7 @@ impl TcpClient {
         self.is_connecting = false;
     }
 
-    fn close_connection(&mut self) {
+    pub fn close_connection(&mut self) {
         if self.is_client_connected {
             let str = &self.stream;
             str.shutdown(Shutdown::Both).unwrap_or(());
