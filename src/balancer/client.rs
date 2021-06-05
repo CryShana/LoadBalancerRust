@@ -6,6 +6,9 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use std::time::Instant;
 
+use mio::Interest;
+use mio::Poll;
+use mio::Token;
 use mio::net::TcpSocket;
 use mio::net::TcpStream;
 
@@ -45,6 +48,16 @@ impl TcpClient {
             last_target: None,
             last_target_error: false,
         }
+    }
+
+    pub fn register_target_with_poll(&mut self, poll: &Poll, token: Token) -> Option<()> {
+        let mut str = self.target_stream.take()?;
+
+        poll.registry().register(&mut str, token, Interest::READABLE | Interest::WRITABLE).unwrap();
+
+        self.target_stream = Some(str);
+
+        Some(())
     }
 
     pub fn get_target_addr(&self) -> Option<SocketAddr> {
