@@ -178,7 +178,7 @@ impl LoadBalancer {
                             *client_counts.read().unwrap()[client_list_index].write().unwrap() = connected_sockets.len();
                         }
                     }
-                    
+
                     // -------------------------------
                     // TIMEOUT HANDLING
                     // -------------------------------
@@ -203,6 +203,7 @@ impl LoadBalancer {
 
                                 // we timed out! Let's try another host
                                 client.close_connection_to_target(true);
+                                LoadBalancer::report_target_error(client, Arc::clone(&b));
                                 LoadBalancer::start_connection(id, token.clone(), client, &poll, Arc::clone(&d), Arc::clone(&b));
                             }
 
@@ -310,11 +311,7 @@ impl LoadBalancer {
                 println!("[Thread {}] Connection ended ({})", id, client.address);
             }
 
-            // report host error to host manager
-            let last_t = client.get_last_target_addr();
-            if client.last_target_errored() && last_t.is_some() {
-                b.write().unwrap().report_error(last_t.unwrap());
-            }
+            LoadBalancer::report_target_error(client, Arc::clone(&b));
         }
     }
 
@@ -351,10 +348,15 @@ impl LoadBalancer {
             client.register_target_with_poll(&poll, token);
         } else {
             // report host error to host manager
-            let last_t = client.get_last_target_addr();
-            if client.last_target_errored() && last_t.is_some() {
-                b.write().unwrap().report_error(last_t.unwrap());
-            }
+            LoadBalancer::report_target_error(client, Arc::clone(&b));
+        }
+    }
+
+    fn report_target_error(client: &mut TcpClient, b: Arc<RwLock<RoundRobin>>) {
+        // report host error to host manager
+        let last_t = client.get_last_target_addr();
+        if client.last_target_errored() && last_t.is_some() {
+            b.write().unwrap().report_error(last_t.unwrap());
         }
     }
 }
