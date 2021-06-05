@@ -108,11 +108,11 @@ impl TcpClient {
     pub fn check_target_connected(&mut self) -> Result<bool> {
         let stream = self.target_stream.as_ref().unwrap();
 
-        match stream.peer_addr() {
-            Ok(s) => s,
-            Err(ref e) if e.kind() == ErrorKind::NotConnected => {
-                return Ok(false);
-            }
+        let mut buf: [u8; 1] = [0; 1];
+        match stream.peek(&mut buf) {
+            Ok(_) => true,
+            Err(ref e) if e.kind() == ErrorKind::NotConnected => return Ok(false),
+            Err(ref e) if e.kind() == ErrorKind::WouldBlock => true,
             Err(e) => {
                 return Err(e);
             }
