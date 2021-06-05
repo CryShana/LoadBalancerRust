@@ -46,7 +46,7 @@ impl Poller {
         let mut poll = Poll::new().unwrap();
         let mut events = Events::with_capacity(512);
         poll.registry().register(&mut listener, Token(0), Interest::READABLE)?;
-
+        
         // START LISTENING
         println!("[Listener] Started listening on port {}", listening_port);
         loop {
@@ -79,9 +79,19 @@ impl Poller {
             for event in events.iter() {
                 match event.token() {
                     _ => {
-                        // listener accepted a new client
-                        let connection = listener.accept()?;
-                        self.balancer.add_client(connection.0);
+                        // accept a new client   
+                        let connection = match listener.accept() {
+                            Ok(c) => c,  
+                            Err(ref e) if e.kind() == ErrorKind::WouldBlock => { continue; },
+                            Err(e) => {
+                                println!("Failed to accept socket! {}", e.to_string());
+                                continue;
+                            }
+                        };
+                        
+                        // we need to reregister to set the Interest again, othewise we won't get any more readiness events (only on Windows)
+                        poll.registry().reregister(&mut listener, Token(0), Interest::READABLE).unwrap();
+                        self.balancer.add_client(connection.0);                    
                     }
                 }
             }
