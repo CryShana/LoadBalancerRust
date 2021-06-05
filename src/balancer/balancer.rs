@@ -179,8 +179,29 @@ impl LoadBalancer {
                             continue;
                         }
 
+                        // HANDLE TIMEOUT TO SINGLE TARGET
                         if client.started_connecting.elapsed() > CONNECTION_TIMEOUT {
-                            // we timed out!
+                            if *d.read().unwrap() {
+                                println!(
+                                    "[Thread {}] Client timed out while trying to connect to target ({} <-> {})",
+                                    id,
+                                    client.address,
+                                    client.get_target_addr().unwrap()
+                                );
+                            }
+
+                            // we timed out! Let's try another host
+                            client.close_connection_to_target(true);
+                            LoadBalancer::start_connection(id, token.clone(), client, &poll, Arc::clone(&d), Arc::clone(&b));
+                        }
+
+                        // HANDLE TOTAL TIMEOUT
+                        if client.last_connection_loss.elapsed() > TOTAL_CONNECTION_TIMEOUT {
+                            if *d.read().unwrap() {
+                                println!("[Thread {}] Client timed out ({})", id, client.address);
+                            }
+
+                            // we timed out completely!
                             client.close_connection();
                         }
 
@@ -217,6 +238,11 @@ impl LoadBalancer {
                                         continue;
                                     }
                                 };
+
+                                if !client.is_client_connected() {
+                                    println!("[IGNORE] Client is not connected. Ignoring it. This should not happen at this point.");
+                                    continue;
+                                }
 
                                 // if client is in process of connecting, check if connection has been established
                                 if client.is_connecting() {
@@ -258,42 +284,7 @@ impl LoadBalancer {
                                         }
                                     }
                                 } else if !client.is_connecting() {
-                                    // determine target host to connect to, using the balancing algorithm!
-                                    let target_socket = match client.get_target_addr() {
-                                        Some(s) => s,
-                                        None => b.write().unwrap().get_next_host(),
-                                    };
-
-                                    if *d.read().unwrap() && !client.is_connecting() {
-                                        println!("[Thread {}] Connecting client ({} -> {})", id, client.address, target_socket);
-                                    }
-
-                                    // connect to target
-                                    let success = match client.connect_to_target(target_socket) {
-                                        Ok(s) => s,
-                                        Err(e) => {
-                                            println!(
-                                                "[Thread {}] Unexpected error while trying to start a connection! {} ({} -> {})",
-                                                id,
-                                                e.to_string(),
-                                                client.address,
-                                                target_socket
-                                            );
-                                            false
-                                        }
-                                    };
-
-                                    if success {
-                                        // connection to target host started
-                                        // add server to poll (with same token as client)
-                                        client.register_target_with_poll(&poll, token);
-                                    } else {
-                                        // report host error to host manager
-                                        let last_t = client.get_last_target_addr();
-                                        if client.last_target_errored() && last_t.is_some() {
-                                            b.write().unwrap().report_error(last_t.unwrap());
-                                        }
-                                    }
+                                    LoadBalancer::start_connection(id, token, client, &poll, Arc::clone(&d), Arc::clone(&b));
                                 }
 
                                 break;
@@ -302,6 +293,46 @@ impl LoadBalancer {
                     }
                 }
             });
+        }
+    }
+
+    fn start_connection(id: u32, token: Token, client: &mut TcpClient, poll: &Poll, d: Arc<RwLock<bool>>, b: Arc<RwLock<RoundRobin>>) {
+        println!("Connecting to next host");
+        // determine target host to connect to, using the balancing algorithm!
+        let target_socket = match client.get_target_addr() {
+            Some(s) => s,
+            None => b.write().unwrap().get_next_host(),
+        };
+
+        if *d.read().unwrap() && !client.is_connecting() {
+            println!("[Thread {}] Connecting client ({} -> {})", id, client.address, target_socket);
+        }
+
+        // connect to target
+        let success = match client.connect_to_target(target_socket) {
+            Ok(s) => s,
+            Err(e) => {
+                println!(
+                    "[Thread {}] Unexpected error while trying to start a connection! {} ({} -> {})",
+                    id,
+                    e.to_string(),
+                    client.address,
+                    target_socket
+                );
+                false
+            }
+        };
+
+        if success {
+            // connection to target host started
+            // add server to poll (with same token as client)
+            client.register_target_with_poll(&poll, token);
+        } else {
+            // report host error to host manager
+            let last_t = client.get_last_target_addr();
+            if client.last_target_errored() && last_t.is_some() {
+                b.write().unwrap().report_error(last_t.unwrap());
+            }
         }
     }
 }

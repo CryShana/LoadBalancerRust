@@ -191,7 +191,7 @@ impl TcpClient {
         return true;
     }
 
-    fn close_connection_to_target(&mut self, target_errored: bool) {
+    pub fn close_connection_to_target(&mut self, target_errored: bool) {
         // if connected to target, disconnect - mark last connection loss
         if self.is_connected {
             let str = self.target_stream.as_ref().unwrap();
