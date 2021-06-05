@@ -6,11 +6,10 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use std::time::Instant;
 
+use mio::net::TcpStream;
 use mio::Interest;
 use mio::Poll;
 use mio::Token;
-use mio::net::TcpSocket;
-use mio::net::TcpStream;
 
 pub struct TcpClient {
     pub stream: TcpStream,
@@ -23,7 +22,6 @@ pub struct TcpClient {
     is_connecting: bool,
     is_client_connected: bool,
     last_connection_loss: Instant,
-    connection_started_time: Instant,
 
     last_target: Option<SocketAddr>,
     last_target_error: bool,
@@ -44,7 +42,6 @@ impl TcpClient {
             is_connecting: false,
             is_client_connected: true,
             last_connection_loss: Instant::now(),
-            connection_started_time: Instant::now(),
             last_target: None,
             last_target_error: false,
         }
@@ -84,54 +81,48 @@ impl TcpClient {
         self.is_client_connected
     }
 
-    pub fn connect_to_target(&mut self, target: SocketAddr, timeout: Duration, total_timeout: Duration) -> Result<bool> {
-        if !self.is_connecting || self.target_stream.is_none() {
-            self.close_connection_to_target(false);
-
-            // prepare for new connection - initialize socket and set target
-            let socket: TcpSocket;
-            if target.is_ipv6() {
-                socket = TcpSocket::new_v6().unwrap();
-            } else {
-                socket = TcpSocket::new_v4().unwrap();
-            }
-
-            let stream = match socket.connect(target) {
-                Ok(t) => t,
-                Err(_) => {
-                    return Ok(false);
-                }
-            };
-
-            self.is_connecting = true;
-            self.target = Some(target);
-            self.target_stream = Some(stream);
-            self.connection_started_time = Instant::now() + timeout;
+    pub fn connect_to_target(&mut self, target: SocketAddr) -> Result<bool> {
+        if self.is_connecting {
+            println!("Already connecting, this shouldn't happen");
+            return Ok(false); 
         }
 
-        // use the previously initialized target and socket (target parameter is ignored when client is connecting)
-        let stream = self.target_stream.as_ref().unwrap();
+        self.close_connection_to_target(false);
 
-        // check if we timed out for this target
-        if Instant::now() > self.connection_started_time {
-            self.close_connection_to_target(true);
-            return Ok(false);
-        }
-
-        if Instant::now() > self.last_connection_loss + total_timeout {
-            self.close_connection();
-            return Ok(false);
-        }
-
-        match stream.peer_addr() {
-            Ok(s) => s,
+        // start connecting
+        let stream = match TcpStream::connect(target) {
+            Ok(t) => t,
             Err(_) => {
                 return Ok(false);
             }
         };
 
-        self.set_connected();
+        println!("Started connection to {}", target);
+
+        self.is_connecting = true;
+        self.target = Some(target);
+        self.target_stream = Some(stream);
+        println!("-------------> TARGET STREAM WAS CHANGED!!!");
+
         Ok(true)
+    }
+
+    pub fn check_target_connected(&mut self) -> bool {
+        println!("CHECKING CONNECTION ({}), is_connected: {}", self.address, self.is_connected);
+        let stream = self.target_stream.as_ref().unwrap();
+
+        let peer = match stream.peer_addr() {
+            Ok(s) => s,
+            Err(e) => {
+                println!("CHECKING CONNECTION ({}) / Nope - {}", self.address, e.to_string());
+                return false;
+            }
+        }; 
+
+        println!("CONNECTED - {} <-> {} (client {})", stream.local_addr().unwrap(), peer, self.address);
+        self.set_connected();
+
+        return true;
     }
 
     fn set_connected(&mut self) {
@@ -144,6 +135,9 @@ impl TcpClient {
         Second boolean represents if any processing has actually been done, if no data has been read or written, [false] will be returned.
     */
     pub fn process(&mut self) -> bool {
+        let is_connected = &self.check_target_connected();
+        println!("({}) IS CONNECTED > {}", self.address, is_connected);
+
         let mut str = self.target_stream.as_ref().unwrap();
 
         // READ FROM CLIENT
@@ -151,17 +145,21 @@ impl TcpClient {
             Ok(r) => r as i32,
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => -1,
             Err(_) => {
+                println!("ERROR WITH CLIENT 1");
                 // error with connection to client
                 self.close_connection();
                 return false;
             }
         };
 
+        println!("  ---- read from client: {}", read);
+
         // WRITE TO SERVER
         if read > 0 {
             match str.write(&self.buffer[..(read as usize)]) {
                 Ok(_) => {}
-                Err(_) => {
+                Err(e) => {
+                    println!("ERROR WITH SERVER 2 - {}", e.to_string());
                     // error with connection to server
                     self.close_connection_to_target(true);
                     return false;
@@ -176,12 +174,15 @@ impl TcpClient {
         let reads: i32 = match str.read(&mut self.buffer) {
             Ok(r) => r as i32,
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => -1,
-            Err(_) => {
+            Err(e) => {
+                println!("ERROR WITH SERVER 3 - {}", e.to_string());
                 // error with connection to server
                 self.close_connection_to_target(true);
                 return false;
             }
         };
+
+        println!("  ---- read from server: {}", reads);
 
         // WRITE TO CLIENT
         if reads > 0 {
@@ -189,6 +190,7 @@ impl TcpClient {
                 Ok(_) => {}
                 Err(_) => {
                     // error with connection to client
+                    println!("ERROR WITH CLIENT 3");
                     self.close_connection();
                     return false;
                 }
