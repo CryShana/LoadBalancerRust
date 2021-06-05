@@ -183,7 +183,7 @@ impl LoadBalancer {
                         if client.started_connecting.elapsed() > CONNECTION_TIMEOUT {
                             if *d.read().unwrap() {
                                 println!(
-                                    "[Thread {}] Client timed out while trying to connect to target ({} <-> {})",
+                                    "[Thread {}] Connection to target timed out ({} <-> {})",
                                     id,
                                     client.address,
                                     client.get_target_addr().unwrap()
@@ -198,7 +198,7 @@ impl LoadBalancer {
                         // HANDLE TOTAL TIMEOUT
                         if client.last_connection_loss.elapsed() > TOTAL_CONNECTION_TIMEOUT {
                             if *d.read().unwrap() {
-                                println!("[Thread {}] Client timed out ({})", id, client.address);
+                                println!("[Thread {}] Timed out ({})", id, client.address);
                             }
 
                             // we timed out completely!
@@ -267,22 +267,7 @@ impl LoadBalancer {
                                 }
 
                                 if client.is_connected() {
-                                    let success = client.process();
-
-                                    if success == false {
-                                        // connection to either server or client has failed
-
-                                        // removal from list is handled later
-                                        if *d.read().unwrap() {
-                                            println!("[Thread {}] Connection ended ({})", id, client.address);
-                                        }
-
-                                        // report host error to host manager
-                                        let last_t = client.get_last_target_addr();
-                                        if client.last_target_errored() && last_t.is_some() {
-                                            b.write().unwrap().report_error(last_t.unwrap());
-                                        }
-                                    }
+                                    LoadBalancer::process_client(id, client, Arc::clone(&d), Arc::clone(&b));
                                 } else if !client.is_connecting() {
                                     LoadBalancer::start_connection(id, token, client, &poll, Arc::clone(&d), Arc::clone(&b));
                                 }
@@ -293,6 +278,25 @@ impl LoadBalancer {
                     }
                 }
             });
+        }
+    }
+
+    fn process_client(id: u32, client: &mut TcpClient, d: Arc<RwLock<bool>>, b: Arc<RwLock<RoundRobin>>) {
+        let success = client.process();
+
+        if success == false {
+            // connection to either server or client has failed
+
+            // removal from list is handled later
+            if *d.read().unwrap() {
+                println!("[Thread {}] Connection ended ({})", id, client.address);
+            }
+
+            // report host error to host manager
+            let last_t = client.get_last_target_addr();
+            if client.last_target_errored() && last_t.is_some() {
+                b.write().unwrap().report_error(last_t.unwrap());
+            }
         }
     }
 
