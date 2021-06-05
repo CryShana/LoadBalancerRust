@@ -1,3 +1,4 @@
+use std::io::ErrorKind;
 use std::io::prelude::*;
 use std::io::Result;
 use std::net::Shutdown;
@@ -107,22 +108,25 @@ impl TcpClient {
         Ok(true)
     }
 
-    pub fn check_target_connected(&mut self) -> bool {
+    pub fn check_target_connected(&mut self) -> Result<bool> {
         println!("CHECKING CONNECTION ({}), is_connected: {}", self.address, self.is_connected);
         let stream = self.target_stream.as_ref().unwrap();
 
-        let peer = match stream.peer_addr() {
+        let mut buf: [u8; 1] = [0; 1];
+        let peer = match stream.peek(&mut buf) {
             Ok(s) => s,
+            Err(ref e) if e.kind() == ErrorKind::NotConnected => {
+                return Ok(false);
+            }
             Err(e) => {
-                println!("CHECKING CONNECTION ({}) / Nope - {}", self.address, e.to_string());
-                return false;
+                return Err(e);
             }
         }; 
 
         println!("CONNECTED - {} <-> {} (client {})", stream.local_addr().unwrap(), peer, self.address);
         self.set_connected();
 
-        return true;
+        Ok(true)
     }
 
     fn set_connected(&mut self) {
@@ -135,9 +139,6 @@ impl TcpClient {
         Second boolean represents if any processing has actually been done, if no data has been read or written, [false] will be returned.
     */
     pub fn process(&mut self) -> bool {
-        let is_connected = &self.check_target_connected();
-        println!("({}) IS CONNECTED > {}", self.address, is_connected);
-
         let mut str = self.target_stream.as_ref().unwrap();
 
         // READ FROM CLIENT
@@ -159,7 +160,8 @@ impl TcpClient {
             match str.write(&self.buffer[..(read as usize)]) {
                 Ok(_) => {}
                 Err(e) => {
-                    println!("ERROR WITH SERVER 2 - {}", e.to_string());
+
+                    println!("ERROR WITH SERVER 2 - {}, kind: {:?}", e.to_string(), e.kind());
                     // error with connection to server
                     self.close_connection_to_target(true);
                     return false;
