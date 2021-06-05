@@ -121,7 +121,9 @@ impl LoadBalancer {
                         break;
                     }
 
-                    // poll for client events
+                    // -------------------------------
+                    // EVENT POLLING
+                    // -------------------------------
                     match poll.poll(&mut events, Some(Duration::from_millis(10))) {
                         Ok(_) => {}
                         Err(ref e) if e.kind() == ErrorKind::Interrupted => {
@@ -134,99 +136,110 @@ impl LoadBalancer {
                         }
                     };
 
-                    // check if any pending clients (try to read to avoid blocking)
-                    let r: i32 = match client_list_pending.read().unwrap()[client_list_index].try_read() {
-                        Ok(r) => r.len() as i32,
-                        Err(_) => -1,
-                    };
-                    if r > 0 {
-                        let p_list = &*client_list_pending.read().unwrap()[client_list_index];
-
-                        let pending = &mut *match p_list.try_write() {
-                            Ok(w) => w,
-                            Err(_) => continue,
+                    // -------------------------------
+                    // PROCESS PENDING CLIENTS
+                    // -------------------------------
+                    {
+                        // check if any pending clients (try to read to avoid blocking)
+                        let r: i32 = match client_list_pending.read().unwrap()[client_list_index].try_read() {
+                            Ok(r) => r.len() as i32,
+                            Err(_) => -1,
                         };
+                        if r > 0 {
+                            let p_list = &*client_list_pending.read().unwrap()[client_list_index];
 
-                        // move all pending clients over to our client_list and register them with poll
-                        let plen = pending.len();
-                        for i in 0..plen {
-                            let index = (plen - 1) - i;
-                            let mut client = pending.remove(index);
+                            let pending = &mut *match p_list.try_write() {
+                                Ok(w) => w,
+                                Err(_) => continue,
+                            };
 
-                            // get and increment token for client
-                            let token = Token(next_token_id);
-                            next_token_id += 1;
-                            if next_token_id >= usize::MAX {
-                                next_token_id = 1;
+                            // move all pending clients over to our client_list and register them with poll
+                            let plen = pending.len();
+                            for i in 0..plen {
+                                let index = (plen - 1) - i;
+                                let mut client = pending.remove(index);
+
+                                // get and increment token for client
+                                let token = Token(next_token_id);
+                                next_token_id += 1;
+                                if next_token_id >= usize::MAX {
+                                    next_token_id = 1;
+                                }
+
+                                poll.registry()
+                                    .register(&mut client.stream, token, Interest::READABLE | Interest::WRITABLE)
+                                    .unwrap();
+
+                                // insert into hashmap for quick lookup
+                                connected_sockets.insert(token, client);
                             }
 
-                            poll.registry()
-                                .register(&mut client.stream, token, Interest::READABLE | Interest::WRITABLE)
-                                .unwrap();
-
-                            // insert into hashmap for quick lookup
-                            connected_sockets.insert(token, client);
+                            // update count
+                            *client_counts.read().unwrap()[client_list_index].write().unwrap() = connected_sockets.len();
                         }
-
-                        // update count
-                        *client_counts.read().unwrap()[client_list_index].write().unwrap() = connected_sockets.len();
                     }
-
-                    // check for connecting clients for time outs
-                    let mut tokens_to_remove: Vec<Box<Token>> = vec![];
-                    for (token, client) in &mut connected_sockets {
-                        if !client.is_connecting() {
-                            continue;
-                        }
-
-                        // HANDLE TIMEOUT TO SINGLE TARGET
-                        if client.started_connecting.elapsed() > CONNECTION_TIMEOUT {
-                            if *d.read().unwrap() {
-                                println!(
-                                    "[Thread {}] Connection to target timed out ({} <-> {})",
-                                    id,
-                                    client.address,
-                                    client.get_target_addr().unwrap()
-                                );
+                    
+                    // -------------------------------
+                    // TIMEOUT HANDLING
+                    // -------------------------------
+                    {
+                        // check for connecting clients for time outs
+                        let mut tokens_to_remove: Vec<Box<Token>> = vec![];
+                        for (token, client) in &mut connected_sockets {
+                            if !client.is_connecting() {
+                                continue;
                             }
 
-                            // we timed out! Let's try another host
-                            client.close_connection_to_target(true);
-                            LoadBalancer::start_connection(id, token.clone(), client, &poll, Arc::clone(&d), Arc::clone(&b));
-                        }
+                            // HANDLE TIMEOUT TO SINGLE TARGET
+                            if client.started_connecting.elapsed() > CONNECTION_TIMEOUT {
+                                if *d.read().unwrap() {
+                                    println!(
+                                        "[Thread {}] Connection to target timed out ({} <-> {})",
+                                        id,
+                                        client.address,
+                                        client.get_target_addr().unwrap()
+                                    );
+                                }
 
-                        // HANDLE TOTAL TIMEOUT
-                        if client.last_connection_loss.elapsed() > TOTAL_CONNECTION_TIMEOUT {
-                            if *d.read().unwrap() {
-                                println!("[Thread {}] Timed out ({})", id, client.address);
+                                // we timed out! Let's try another host
+                                client.close_connection_to_target(true);
+                                LoadBalancer::start_connection(id, token.clone(), client, &poll, Arc::clone(&d), Arc::clone(&b));
                             }
 
-                            // we timed out completely!
-                            client.close_connection();
+                            // HANDLE TOTAL TIMEOUT
+                            if client.last_connection_loss.elapsed() > TOTAL_CONNECTION_TIMEOUT {
+                                if *d.read().unwrap() {
+                                    println!("[Thread {}] Timed out ({})", id, client.address);
+                                }
+
+                                // we timed out completely!
+                                client.close_connection();
+                            }
+
+                            if !client.is_client_connected() {
+                                let t = Box::new(token.clone());
+                                tokens_to_remove.push(t);
+                            }
                         }
 
-                        if !client.is_client_connected() {
-                            let t = Box::new(token.clone());
-                            tokens_to_remove.push(t);
+                        // check for no-longer connected clients
+                        if tokens_to_remove.len() > 0 {
+                            for token in tokens_to_remove {
+                                let mut client = connected_sockets.remove(&token).unwrap();
+                                poll.registry().deregister(&mut client.stream).unwrap();
+                            }
+
+                            // update count
+                            *client_counts.read().unwrap()[client_list_index].write().unwrap() = connected_sockets.len();
                         }
                     }
 
-                    // check for no-longer connected clients
-                    if tokens_to_remove.len() > 0 {
-                        for token in tokens_to_remove {
-                            let mut client = connected_sockets.remove(&token).unwrap();
-                            poll.registry().deregister(&mut client.stream).unwrap();
-                        }
-
-                        // update count
-                        *client_counts.read().unwrap()[client_list_index].write().unwrap() = connected_sockets.len();
-                    }
-
+                    // ------------------------------
+                    // EVENT LOOP
+                    // ------------------------------
                     if events.is_empty() || *stopped.read().unwrap() {
                         continue;
                     }
-
-                    // handle events
                     for event in events.iter() {
                         match event.token() {
                             token => {
@@ -246,26 +259,10 @@ impl LoadBalancer {
 
                                 // if client is in process of connecting, check if connection has been established
                                 if client.is_connecting() {
-                                    let server_connected = client.check_target_connected().unwrap_or_else(|e| {
-                                        println!("Not connected unknown error -> {}", e.to_string());
-                                        // TODO: should probably disconnect - there was an error while connecting other than NotConnected
-                                        false
-                                    });
-
-                                    if server_connected {
-                                        let addr = client.get_target_addr().unwrap();
-
-                                        if *d.read().unwrap() && !client.is_connecting() {
-                                            println!("[Thread {}] Client connected ({} -> {})", id, client.address, addr);
-                                        }
-
-                                        // report success if connection succeeded
-                                        if b.read().unwrap().is_on_cooldown(addr) {
-                                            b.write().unwrap().report_success(addr);
-                                        }
-                                    }
+                                    LoadBalancer::try_confirm_connection(id, client, Arc::clone(&d), Arc::clone(&b));
                                 }
 
+                                // if connected, process it normally, otherwise start a new connection to next host
                                 if client.is_connected() {
                                     LoadBalancer::process_client(id, client, Arc::clone(&d), Arc::clone(&b));
                                 } else if !client.is_connecting() {
@@ -278,6 +275,27 @@ impl LoadBalancer {
                     }
                 }
             });
+        }
+    }
+
+    fn try_confirm_connection(id: u32, client: &mut TcpClient, d: Arc<RwLock<bool>>, b: Arc<RwLock<RoundRobin>>) {
+        let server_connected = client.check_target_connected().unwrap_or_else(|e| {
+            println!("Not connected unknown error -> {}", e.to_string());
+            // TODO: should probably disconnect - there was an error while connecting other than NotConnected
+            false
+        });
+
+        if server_connected {
+            let addr = client.get_target_addr().unwrap();
+
+            if *d.read().unwrap() && !client.is_connecting() {
+                println!("[Thread {}] Client connected ({} -> {})", id, client.address, addr);
+            }
+
+            // report success if connection succeeded
+            if b.read().unwrap().is_on_cooldown(addr) {
+                b.write().unwrap().report_success(addr);
+            }
         }
     }
 
