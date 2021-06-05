@@ -183,20 +183,45 @@ impl LoadBalancer {
                                 let client = match connected_sockets.get_mut(&token) {
                                     Some(c) => c,
                                     None => {
-                                        println!("ERROR - Tried getting client that was not present in hash map!");
+                                        println!("ERROR - Tried getting client that was not present in hash map! -> token: {:?}", token);
                                         // TODO: maybe deregister from poll?
                                         continue;
                                     }
                                 };
 
                                 // process client
+                                println!("For token {:?}, processing client -> {}", token, client.address);
 
                                 // if client no longer connected, remove it
-                                if client.is_client_connected() {
+                                if !client.is_client_connected() {
+                                    poll.registry().deregister(&mut client.stream).unwrap();
+
                                     connected_sockets.remove(&token);
+
                                     // update count
                                     *client_counts.read().unwrap()[client_list_index].write().unwrap() = connected_sockets.len();
+
                                     continue;
+                                }
+
+                                // if client is in process of connecting, check if connection has been established 
+                                if client.is_connecting() {
+                                    println!("checking if target connected");
+                                    let server_connected = client.check_target_connected();
+                                    println!("checked connection-> {} ({})", server_connected, client.address);
+
+                                    if server_connected {
+                                        let addr = client.get_target_addr().unwrap();
+
+                                        if *d.read().unwrap() && !client.is_connecting() {
+                                            println!("[Thread {}] Client connected ({} -> {})", id, client.address, addr);
+                                        }
+
+                                        // report success if connection succeeded
+                                        if b.read().unwrap().is_on_cooldown(addr) {
+                                            b.write().unwrap().report_success(addr);
+                                        }
+                                    }
                                 }
 
                                 if client.is_connected() {
@@ -216,7 +241,7 @@ impl LoadBalancer {
                                             b.write().unwrap().report_error(last_t.unwrap());
                                         }
                                     }
-                                } else {
+                                } else if !client.is_connecting() {
                                     // determine target host to connect to, using the balancing algorithm!
                                     let target_socket = match client.get_target_addr() {
                                         Some(s) => s,
@@ -228,11 +253,11 @@ impl LoadBalancer {
                                     }
 
                                     // connect to target
-                                    let success = match client.connect_to_target(target_socket, CONNECTION_TIMEOUT, TOTAL_CONNECTION_TIMEOUT) {
+                                    let success = match client.connect_to_target(target_socket) {
                                         Ok(s) => s,
                                         Err(e) => {
                                             println!(
-                                                "[Thread {}] Unexpected error while trying to connect! {} ({} -> {})",
+                                                "[Thread {}] Unexpected error while trying to start a connection! {} ({} -> {})",
                                                 id,
                                                 e.to_string(),
                                                 client.address,
@@ -243,18 +268,9 @@ impl LoadBalancer {
                                     };
 
                                     if success {
-                                        // connection to target host succeeded!
-                                        if *d.read().unwrap() {
-                                            println!("[Thread {}] Client connected ({} -> {})", id, client.address, target_socket);
-                                        }
-
+                                        // connection to target host started
                                         // add server to poll (with same token as client)
                                         client.register_target_with_poll(&poll, token);
-
-                                        // report success if connection succeeded - we first check if it's even necessary before taking WRITE access for the balancer
-                                        if b.read().unwrap().is_on_cooldown(target_socket) {
-                                            b.write().unwrap().report_success(target_socket);
-                                        }
                                     } else {
                                         // report host error to host manager
                                         let last_t = client.get_last_target_addr();
