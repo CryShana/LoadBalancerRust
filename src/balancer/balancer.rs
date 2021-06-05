@@ -189,9 +189,6 @@ impl LoadBalancer {
                                     }
                                 };
 
-                                // process client
-                                println!("For token {:?}, processing client -> {}", token, client.address);
-
                                 // if client no longer connected, remove it
                                 if !client.is_client_connected() {
                                     poll.registry().deregister(&mut client.stream).unwrap();
@@ -206,14 +203,13 @@ impl LoadBalancer {
 
                                 // if client is in process of connecting, check if connection has been established
                                 if client.is_connecting() {
-                                    println!("checking if target connected");
                                     let server_connected = client.check_target_connected().unwrap_or_else(|e| {
                                         println!("Not connected unknown error -> {}", e.to_string());
                                         // TODO: should probably disconnect - there was an error while connecting other than NotConnected
                                         false
                                     });
 
-                                    if server_connected {  
+                                    if server_connected {
                                         let addr = client.get_target_addr().unwrap();
 
                                         if *d.read().unwrap() && !client.is_connecting() {

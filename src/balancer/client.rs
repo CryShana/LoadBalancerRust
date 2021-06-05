@@ -1,5 +1,5 @@
-use std::io::ErrorKind;
 use std::io::prelude::*;
+use std::io::ErrorKind;
 use std::io::Result;
 use std::net::Shutdown;
 use std::net::SocketAddr;
@@ -84,8 +84,8 @@ impl TcpClient {
 
     pub fn connect_to_target(&mut self, target: SocketAddr) -> Result<bool> {
         if self.is_connecting {
-            println!("Already connecting, this shouldn't happen");
-            return Ok(false); 
+            println!("[WARNING] Already connecting, this shouldn't happen");
+            return Ok(false);
         }
 
         self.close_connection_to_target(false);
@@ -98,22 +98,17 @@ impl TcpClient {
             }
         };
 
-        println!("Started connection to {}", target);
-
         self.is_connecting = true;
         self.target = Some(target);
         self.target_stream = Some(stream);
-        println!("-------------> TARGET STREAM WAS CHANGED!!!");
 
         Ok(true)
     }
 
     pub fn check_target_connected(&mut self) -> Result<bool> {
-        println!("CHECKING CONNECTION ({}), is_connected: {}", self.address, self.is_connected);
         let stream = self.target_stream.as_ref().unwrap();
 
-        let mut buf: [u8; 1] = [0; 1];
-        let peer = match stream.peek(&mut buf) {
+        match stream.peer_addr() {
             Ok(s) => s,
             Err(ref e) if e.kind() == ErrorKind::NotConnected => {
                 return Ok(false);
@@ -121,11 +116,9 @@ impl TcpClient {
             Err(e) => {
                 return Err(e);
             }
-        }; 
+        };
 
-        println!("CONNECTED - {} <-> {} (client {})", stream.local_addr().unwrap(), peer, self.address);
         self.set_connected();
-
         Ok(true)
     }
 
@@ -146,22 +139,17 @@ impl TcpClient {
             Ok(r) => r as i32,
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => -1,
             Err(_) => {
-                println!("ERROR WITH CLIENT 1");
                 // error with connection to client
                 self.close_connection();
                 return false;
             }
         };
 
-        println!("  ---- read from client: {}", read);
-
         // WRITE TO SERVER
         if read > 0 {
             match str.write(&self.buffer[..(read as usize)]) {
                 Ok(_) => {}
                 Err(e) => {
-
-                    println!("ERROR WITH SERVER 2 - {}, kind: {:?}", e.to_string(), e.kind());
                     // error with connection to server
                     self.close_connection_to_target(true);
                     return false;
@@ -177,14 +165,11 @@ impl TcpClient {
             Ok(r) => r as i32,
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => -1,
             Err(e) => {
-                println!("ERROR WITH SERVER 3 - {}", e.to_string());
                 // error with connection to server
                 self.close_connection_to_target(true);
                 return false;
             }
         };
-
-        println!("  ---- read from server: {}", reads);
 
         // WRITE TO CLIENT
         if reads > 0 {
@@ -192,7 +177,6 @@ impl TcpClient {
                 Ok(_) => {}
                 Err(_) => {
                     // error with connection to client
-                    println!("ERROR WITH CLIENT 3");
                     self.close_connection();
                     return false;
                 }

@@ -5,7 +5,6 @@ mod balancer;
 use balancer::Poller;
 use balancer::RoundRobin;
 use balancer::{HostManager, LoadBalancer};
-
 fn main() -> Result<()> {
     // PARSE HOSTS
     let host_manager = HostManager::new("hosts");
