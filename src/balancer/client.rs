@@ -130,8 +130,8 @@ impl TcpClient {
     }
 
     /**
-        Reads from client and forwards it to server. First boolean represents processing success, will be [false] when connection to either client or server fails.
-        Second boolean represents if any processing has actually been done, if no data has been read or written, [false] will be returned.
+        Reads from client and forwards it to server. Boolean represents processing success, will be [false] when connection to either client or server fails.
+        Equivalent of calling [forward_to_target] and [forward_from_target] methods
     */
     pub fn process(&mut self) -> bool {
         if !self.forward_to_target() {
