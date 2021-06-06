@@ -136,6 +136,7 @@ impl LoadBalancer {
                         }
                     };
 
+
                     // -------------------------------
                     // PROCESS PENDING CLIENTS
                     // -------------------------------
@@ -189,7 +190,7 @@ impl LoadBalancer {
                             if !client.is_connecting() {
                                 continue;
                             }
-
+                            
                             // HANDLE TIMEOUT TO SINGLE TARGET
                             if client.started_connecting.elapsed() > CONNECTION_TIMEOUT {
                                 if *d.read().unwrap() {
@@ -241,6 +242,7 @@ impl LoadBalancer {
                     if events.is_empty() || *stopped.read().unwrap() {
                         continue;
                     }
+
                     for event in events.iter() {
                         match event.token() {
                             token => {
@@ -269,8 +271,6 @@ impl LoadBalancer {
                                 } else if !client.is_connecting() {
                                     LoadBalancer::start_connection(id, token, client, &poll, Arc::clone(&d), Arc::clone(&b));
                                 }
-
-                                break;
                             }
                         }
                     }
