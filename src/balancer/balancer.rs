@@ -110,6 +110,15 @@ impl LoadBalancer {
                 let mut connected_sockets: HashMap<Token, TcpClient> = HashMap::new();
                 let mut next_token_id: usize = 0;
 
+                let mut get_next_token = || {
+                    let token = Token(next_token_id);
+                    next_token_id += 1;
+                    if next_token_id >= usize::MAX {
+                        next_token_id = 1;
+                    }
+                    token
+                };
+
                 let client_list_index = id as usize;
 
                 let mut poll = Poll::new().unwrap();
@@ -136,7 +145,6 @@ impl LoadBalancer {
                         }
                     };
 
-
                     // -------------------------------
                     // PROCESS PENDING CLIENTS
                     // -------------------------------
@@ -160,12 +168,7 @@ impl LoadBalancer {
                                 let index = (plen - 1) - i;
                                 let mut client = pending.remove(index);
 
-                                // get and increment token for client
-                                let token = Token(next_token_id);
-                                next_token_id += 1;
-                                if next_token_id >= usize::MAX {
-                                    next_token_id = 1;
-                                }
+                                let token = get_next_token();
 
                                 poll.registry()
                                     .register(&mut client.stream, token, Interest::READABLE | Interest::WRITABLE)
@@ -198,7 +201,7 @@ impl LoadBalancer {
                             if !client.is_connecting() {
                                 continue;
                             }
-                            
+
                             // HANDLE TIMEOUT TO SINGLE TARGET
                             if client.started_connecting.elapsed() > CONNECTION_TIMEOUT {
                                 if *d.read().unwrap() {
@@ -224,7 +227,7 @@ impl LoadBalancer {
 
                                 // we timed out completely!
                                 client.close_connection();
-                            }  
+                            }
                         }
 
                         // now remove the marked clients
@@ -246,7 +249,6 @@ impl LoadBalancer {
                         continue;
                     }
 
-                    //println!("events need to be handled");
                     for event in events.iter() {
                         match event.token() {
                             token => {
