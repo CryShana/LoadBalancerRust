@@ -246,6 +246,7 @@ impl LoadBalancer {
                         continue;
                     }
 
+                    //println!("events need to be handled");
                     for event in events.iter() {
                         match event.token() {
                             token => {
@@ -319,7 +320,6 @@ impl LoadBalancer {
     }
 
     fn start_connection(id: u32, token: Token, client: &mut TcpClient, poll: &Poll, d: Arc<RwLock<bool>>, b: Arc<RwLock<RoundRobin>>) {
-        println!("Connecting to next host");
         // determine target host to connect to, using the balancing algorithm!
         let target_socket = match client.get_target_addr() {
             Some(s) => s,
