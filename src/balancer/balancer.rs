@@ -170,9 +170,7 @@ impl LoadBalancer {
 
                                 let token = get_next_token();
 
-                                poll.registry()
-                                    .register(&mut client.stream, token, Interest::READABLE | Interest::WRITABLE)
-                                    .unwrap();
+                                poll.registry().register(&mut client.stream, token, Interest::READABLE).unwrap();
 
                                 // insert into hashmap for quick lookup
                                 connected_sockets.insert(token, client);
@@ -248,7 +246,6 @@ impl LoadBalancer {
                     if events.is_empty() || *stopped.read().unwrap() {
                         continue;
                     }
-
                     for event in events.iter() {
                         match event.token() {
                             token => {
