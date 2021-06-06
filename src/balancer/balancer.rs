@@ -181,12 +181,20 @@ impl LoadBalancer {
                     }
 
                     // -------------------------------
-                    // TIMEOUT HANDLING
+                    // CLIENT CHECKING (timeout handling)
                     // -------------------------------
                     {
-                        // check for connecting clients for time outs
+                        // check for connecting clients for time outs and their current state
                         let mut tokens_to_remove: Vec<Box<Token>> = vec![];
                         for (token, client) in &mut connected_sockets {
+                            // if client not connected, schedule for removal
+                            if !client.is_client_connected() {
+                                let t = Box::new(token.clone());
+                                tokens_to_remove.push(t);
+                                continue;
+                            }
+
+                            // if client not in IN_CONNECTING state, we can't check for time outs
                             if !client.is_connecting() {
                                 continue;
                             }
@@ -216,15 +224,10 @@ impl LoadBalancer {
 
                                 // we timed out completely!
                                 client.close_connection();
-                            }
-
-                            if !client.is_client_connected() {
-                                let t = Box::new(token.clone());
-                                tokens_to_remove.push(t);
-                            }
+                            }  
                         }
 
-                        // check for no-longer connected clients
+                        // now remove the marked clients
                         if tokens_to_remove.len() > 0 {
                             for token in tokens_to_remove {
                                 let mut client = connected_sockets.remove(&token).unwrap();
@@ -256,7 +259,7 @@ impl LoadBalancer {
                                 };
 
                                 if !client.is_client_connected() {
-                                    println!("[IGNORE] Client is not connected. Ignoring it. This should not happen at this point.");
+                                    // ignore, will be handled in later loop and cleaned
                                     continue;
                                 }
 
