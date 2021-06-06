@@ -134,6 +134,21 @@ impl TcpClient {
         Second boolean represents if any processing has actually been done, if no data has been read or written, [false] will be returned.
     */
     pub fn process(&mut self) -> bool {
+        if !self.forward_to_target() {
+            return false;
+        }
+
+        if !self.forward_from_target() {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+        Forwards client messages to connected target. (Reads from client stream and writes to target stream)
+    */
+    pub fn forward_to_target(&mut self) -> bool {
         let mut str = self.target_stream.as_ref().unwrap();
 
         // READ FROM CLIENT
@@ -151,7 +166,7 @@ impl TcpClient {
         if read > 0 {
             match str.write(&self.buffer[..(read as usize)]) {
                 Ok(_) => {}
-                Err(e) => {
+                Err(_e) => {
                     // error with connection to server
                     self.close_connection_to_target(true);
                     return false;
@@ -162,11 +177,20 @@ impl TcpClient {
             return false;
         }
 
+        return true;
+    }
+
+     /**
+        Forwards connected target messages to client. (Reads from target stream and writes to client stream)
+    */
+    pub fn forward_from_target(&mut self) -> bool {
+        let mut str = self.target_stream.as_ref().unwrap();
+
         // READ FROM SERVER
         let reads: i32 = match str.read(&mut self.buffer) {
             Ok(r) => r as i32,
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => -1,
-            Err(e) => {
+            Err(_e) => {
                 // error with connection to server
                 self.close_connection_to_target(true);
                 return false;
