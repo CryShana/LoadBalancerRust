@@ -88,7 +88,7 @@ impl LoadBalancer {
         }
 
         if *self.debug.read().unwrap() {
-            println!("[Thread {}] Connected from {}", min_index, client.address.to_string());
+            println!("[Thread {}] Connected from {}", min_index, client.address);
         }
 
         // add client to pending list
@@ -237,6 +237,15 @@ impl LoadBalancer {
                             for token in tokens_to_remove {
                                 let mut client = connected_sockets.remove(&token).unwrap();
                                 poll.registry().deregister(&mut client.stream).unwrap();
+
+                                if *d.read().unwrap() {
+                                    println!(
+                                        "[Thread {}] Connection ended ({}) [Remaining clients: {}]",
+                                        id,
+                                        client.address,
+                                        connected_sockets.len()
+                                    );
+                                }
                             }
 
                             // update count
@@ -274,7 +283,7 @@ impl LoadBalancer {
 
                                 // if connected, process it normally, otherwise start a new connection to next host
                                 if client.is_connected() {
-                                    LoadBalancer::process_client(id, client, Arc::clone(&d), Arc::clone(&b));
+                                    LoadBalancer::process_client(client, Arc::clone(&b));
                                 } else if !client.is_connecting() {
                                     LoadBalancer::start_connection(id, token, client, &poll, Arc::clone(&d), Arc::clone(&b));
                                 }
@@ -307,16 +316,13 @@ impl LoadBalancer {
         }
     }
 
-    fn process_client(id: u32, client: &mut TcpClient, d: Arc<RwLock<bool>>, b: Arc<RwLock<RoundRobin>>) {
+    fn process_client(client: &mut TcpClient, b: Arc<RwLock<RoundRobin>>) {
         let success = client.process();
 
         if success == false {
             // connection to either server or client has failed
 
             // removal from list is handled later
-            if *d.read().unwrap() {
-                println!("[Thread {}] Connection ended ({})", id, client.address);
-            }
 
             LoadBalancer::report_target_error(client, Arc::clone(&b));
         }
