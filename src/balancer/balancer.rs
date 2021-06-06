@@ -87,6 +87,10 @@ impl LoadBalancer {
             }
         }
 
+        if *self.debug.read().unwrap() {
+            println!("[Thread {}] Connected from {}", min_index, client.address.to_string());
+        }
+
         // add client to pending list
         client_lists_pending[min_index].write().unwrap().push(client);
     }

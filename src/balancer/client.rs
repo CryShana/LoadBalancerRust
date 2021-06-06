@@ -31,7 +31,6 @@ pub struct TcpClient {
 impl TcpClient {
     pub fn new(stream: TcpStream) -> Self {
         let addr: SocketAddr = stream.peer_addr().unwrap();
-        println!("[Listener] Connected from {}", addr.to_string());
 
         TcpClient {
             stream: stream,
