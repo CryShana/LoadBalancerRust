@@ -4,7 +4,6 @@ use std::io::Result;
 use std::net::Shutdown;
 use std::net::SocketAddr;
 
-use std::time::Duration;
 use std::time::Instant;
 
 use mio::net::TcpStream;
