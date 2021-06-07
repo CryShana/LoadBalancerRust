@@ -4,12 +4,10 @@ Simple high-performance TCP-level load balancer made in Rust
 ## Why?
 Because sometimes you just need a very simple tool with minimal configuration and that just works.
 
-Also because I just wanted to try using Rust.
+Also because I just wanted to try using Rust and this was fun to do.
 
 ## Usage
-A `hosts` file is required in the same directory from where you're calling the program.
-
-Just put the servers' `[HOSTNAME]:[PORT]` on every new line.
+A `hosts` file is required in the same directory from where you're calling the program. Should contain all servers' `[HOSTNAME]:[PORT]` on every new line.
 
 Example `hosts` file content:
 ```
@@ -17,6 +15,14 @@ localhost:5000
 127.0.0.1:5001
 domain.com:80
 ```
+
+Running the program: (will listen on port 7777)
+```sh
+./load-balancer-rust 7777
+```
+
+## Balancing algorithms
+As of right now, only *Round Robin* is implemented. Every time a connection to a server is lost due to an error, the server is marked as unavailable and is avoided for some time. To avoid losing time on constantly trying to connect clients to an offline server.
 
 ## Issues
 Not yet fully optimized for Windows. Some weird behavior causing slower response times than on Linux.
