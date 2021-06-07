@@ -6,6 +6,18 @@ Because sometimes you just need a very simple tool with minimal configuration an
 
 Also because I just wanted to try using Rust.
 
+## Usage
+A `hosts` file is required in the same directory from where you're calling the program.
+
+Just put the servers' `[HOSTNAME]:[PORT]` on every new line.
+
+Example `hosts` file content:
+```
+localhost:5000
+127.0.0.1:5001
+domain.com:80
+```
+
 ## Issues
 Not yet fully optimized for Windows. Some weird behavior causing slower response times than on Linux.
 
