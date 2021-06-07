@@ -265,7 +265,7 @@ impl LoadBalancer {
                                 let client = match connected_sockets.get_mut(&token) {
                                     Some(c) => c,
                                     None => {
-                                        println!("ERROR - Tried getting client that was not present in hash map! -> token: {:?}", token);
+                                        // println!("ERROR - Tried getting client that was not present in hash map! -> token: {:?}", token);
                                         // TODO: maybe deregister from poll if this is ever even called
                                         continue;
                                     }
@@ -306,7 +306,7 @@ impl LoadBalancer {
             let addr = client.get_target_addr().unwrap();
 
             if *d.read().unwrap() && !client.is_connecting() {
-                println!("[Thread {}] Client connected ({} -> {})", id, client.address, addr);
+                println!("[Thread {}] Client connected to target ({} -> {})", id, client.address, addr);
             }
 
             // report success if connection succeeded
