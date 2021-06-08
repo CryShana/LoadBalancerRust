@@ -1,5 +1,5 @@
 # Load Balancer Rust
-Simple high-performance TCP-level load balancer made in Rust
+Simple high-performance TCP-level load balancer / reverse proxy made in Rust
 
 ## Why?
 Because sometimes you just need a very simple tool with minimal configuration and that just works.
