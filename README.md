@@ -72,11 +72,11 @@ server {
 And ran the test against nginx and got the following results:
 ![](https://cryshana.me/f/uVmlKwSzzRJm.png)
 
-Average response time was around **0.55ms**.
+Average response time was around **0.55ms**. (an overhead of about 0.30ms)
 
 ### Load Balancer Rust
 And then I tried using my own tool - using just one host to test reverse proxying performance:
 
 ![](https://cryshana.me/f/CAXD08i5DyaH.png)
 
-Average response time was around **0.36ms**. (About **52% faster** than nginx)
+Average response time was around **0.36ms**. (an overhead of about 0.11ms, about **52% faster** than nginx)
