@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 ctrlc = "3.1.9"
-mio = "0.7.11"
+mio = "0.8.0"
 
 [features]
 default = ["mio/os-poll", "mio/net"]
