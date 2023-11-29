@@ -218,7 +218,6 @@ impl TcpClient {
         if self.is_connected {
             let str = self.target_stream.as_ref().unwrap();
             str.shutdown(Shutdown::Both).unwrap_or(());
-            drop(str);
 
             self.last_connection_loss = Instant::now();
         }
@@ -244,7 +243,6 @@ impl TcpClient {
         if self.is_client_connected {
             let str = &self.stream;
             str.shutdown(Shutdown::Both).unwrap_or(());
-            drop(str);
 
             self.is_client_connected = false;
 

@@ -5,6 +5,7 @@ mod balancer;
 use balancer::Poller;
 use balancer::RoundRobin;
 use balancer::{HostManager, LoadBalancer};
+
 fn main() -> Result<()> {
     // PARSE HOSTS
     let host_manager = HostManager::new("hosts");
@@ -19,10 +20,13 @@ fn main() -> Result<()> {
     let mut poller = Poller::new(balancer);
 
     // PARSE PORT
-    let port = get_port().unwrap_or_else(|| {
-        println!("Invalid listening port provided!");
-        exit(1);
-    });
+    let port = match get_port() {
+        Some(p) => p,
+        None => {
+            println!("Invalid listening port provided, use default 4554");
+            4554
+        }
+    };
 
     // START
     poller.start_listening(port).unwrap_or_else(|e| {
