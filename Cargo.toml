@@ -5,8 +5,8 @@ authors = ["CryShana <cryshana@cryshana.me>"]
 edition = "2018"
 
 [dependencies]
-ctrlc = "3.1.9"
-mio = "0.8.0"
+ctrlc = "3.4.1"
+mio = "0.8.9"
 
 [features]
 default = ["mio/os-poll", "mio/net"]
