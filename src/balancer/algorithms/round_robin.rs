@@ -1,112 +1,97 @@
+use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::time::Duration;
-use std::time::Instant;
-use std::usize;
+use std::time::{Duration, Instant};
 
 use super::BalancingAlgorithm;
-use super::HostManager;
 
 pub struct RoundRobin {
-    current_host: usize,
-    max_host: usize,
-    host_manager: HostManager,
-    cooldowns: Vec<(SocketAddr, Instant)>,
+    hosts: Vec<SocketAddr>,
+    next: usize,
+    cooldowns: HashMap<SocketAddr, Instant>,
 }
 
 impl RoundRobin {
-    // how long the host is avoided (on cooldown) when first error is reported
+    // how long the host is avoided (on cooldown) after an error is reported
     const TARGET_DOWN_COOLDOWN: Duration = Duration::from_secs(30);
 
-    pub fn new(host_manager: HostManager) -> Self {
-        let max = host_manager.hosts.len();
+    pub fn new(hosts: Vec<SocketAddr>) -> Self {
+        assert!(!hosts.is_empty(), "RoundRobin requires at least one host");
+
         RoundRobin {
-            current_host: 0,
-            host_manager: host_manager,
-            max_host: max,
-            cooldowns: vec![],
+            hosts,
+            next: 0,
+            cooldowns: HashMap::new(),
         }
     }
 
-    fn get_host_cooldown_index(&self, addr: SocketAddr) -> i32 {
-        let mut index: i32 = -1;
-        for i in 0..self.cooldowns.len() {
-            if self.cooldowns[i].0 == addr {
-                index = i as i32;
-                break;
-            }
-        }
-
-        index
-    }
-
-    fn increment_host_counter(&mut self) {
-        self.current_host = self.current_host + 1;
-        if self.current_host >= self.max_host {
-            self.current_host = 0
-        }
+    fn advance(&mut self) -> SocketAddr {
+        let host = self.hosts[self.next];
+        self.next = (self.next + 1) % self.hosts.len();
+        host
     }
 }
 
 impl BalancingAlgorithm for RoundRobin {
     fn get_next_host(&mut self) -> SocketAddr {
-        let mut val;
-        let starting_host_index = self.current_host;
+        let now = Instant::now();
 
-        loop {
-            // select host
-            val = self.host_manager.hosts[self.current_host];
-
-            // offset host selector to next one
-            self.increment_host_counter();
-
-            // if host on cooldown, avoid it (but if we made a full cycle, just return the initial choice)
-            let cooldown_index = self.get_host_cooldown_index(val);
-            let cycle_reached = starting_host_index == self.current_host;
-            if cooldown_index >= 0 && !cycle_reached {
-                // check if cooldown has passed
-                if Instant::now() > self.cooldowns[cooldown_index as usize].1 {
-                    // cooldown passed, remove it
-                    self.cooldowns.remove(cooldown_index as usize);
-                    break;
-                }
-
-                continue;
-            } else if cycle_reached {
-                // cycle reached, let's increment the counter to continue trying different hosts until one actually connects
-                self.increment_host_counter();
+        for _ in 0..self.hosts.len() {
+            let host = self.advance();
+            if self.cooldowns.get(&host).is_none_or(|&until| now >= until) {
+                return host;
             }
-
-            break;
         }
 
-        val
+        // every host is on cooldown, keep rotating through them until one connects again
+        self.advance()
     }
 
     fn report_error(&mut self, addr: SocketAddr) {
-        let index: i32 = self.get_host_cooldown_index(addr);
-
-        let new_limit = Instant::now() + RoundRobin::TARGET_DOWN_COOLDOWN;
-
-        if index < 0 {
-            // add it
-            self.cooldowns.push((addr, new_limit));
-        } else {
-            // update it
-            self.cooldowns[index as usize].1 = new_limit;
-        }
+        self.cooldowns.insert(addr, Instant::now() + Self::TARGET_DOWN_COOLDOWN);
     }
 
     fn report_success(&mut self, addr: SocketAddr) {
-        let index: i32 = self.get_host_cooldown_index(addr);
-        if index < 0 {
-            return;
-        }
+        self.cooldowns.remove(&addr);
+    }
+}
 
-        self.cooldowns.remove(index as usize);
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hosts() -> Vec<SocketAddr> {
+        vec!["127.0.0.1:1".parse().unwrap(), "127.0.0.1:2".parse().unwrap(), "127.0.0.1:3".parse().unwrap()]
     }
 
-    fn is_on_cooldown(&self, addr: SocketAddr) -> bool {
-        let index: i32 = self.get_host_cooldown_index(addr);
-        return index >= 0;
+    #[test]
+    fn rotates_through_hosts() {
+        let hosts = hosts();
+        let mut rr = RoundRobin::new(hosts.clone());
+
+        let picked: Vec<_> = (0..4).map(|_| rr.get_next_host()).collect();
+        assert_eq!(picked, [hosts[0], hosts[1], hosts[2], hosts[0]]);
+    }
+
+    #[test]
+    fn skips_hosts_on_cooldown_until_success() {
+        let hosts = hosts();
+        let mut rr = RoundRobin::new(hosts.clone());
+        rr.report_error(hosts[1]);
+
+        let picked: Vec<_> = (0..3).map(|_| rr.get_next_host()).collect();
+        assert_eq!(picked, [hosts[0], hosts[2], hosts[0]]);
+
+        rr.report_success(hosts[1]);
+        assert_eq!(rr.get_next_host(), hosts[1]);
+    }
+
+    #[test]
+    fn rotates_when_all_hosts_on_cooldown() {
+        let hosts = hosts();
+        let mut rr = RoundRobin::new(hosts.clone());
+        hosts.iter().for_each(|&h| rr.report_error(h));
+
+        let picked: Vec<_> = (0..3).map(|_| rr.get_next_host()).collect();
+        assert_eq!(picked, [hosts[0], hosts[1], hosts[2]]);
     }
 }

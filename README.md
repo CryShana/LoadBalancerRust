@@ -21,8 +21,17 @@ Running the program: (will listen on port 7777)
 ./load-balancer-rust 7777
 ```
 
+Add `--verbose` (or `-v`) to log every connection:
+```sh
+./load-balancer-rust 7777 --verbose
+```
+
+One worker thread is started per available CPU core.
+
 ## Balancing algorithms
-As of right now, only *Round Robin* is implemented. Every time a connection to a server is lost due to an error, the server is marked as unavailable and is avoided for some time. To avoid losing time on constantly trying to connect clients to an offline server.
+As of right now, only *Round Robin* is implemented. Every time connecting to a server fails or times out, the server is marked as unavailable and is avoided for some time. To avoid losing time on constantly trying to connect clients to an offline server.
+
+If connecting to a server fails, the client is moved to the next server. A client that can't be connected to any server within 4 seconds is disconnected. Once a client is connected, it stays with that server until either side closes the connection. Connections with no activity for 10 minutes are closed.
 
 ## Issues
 Not yet fully optimized for Windows. Some weird behavior causing slower response times than on Linux.

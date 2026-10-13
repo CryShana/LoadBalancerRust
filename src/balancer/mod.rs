@@ -1,13 +1,11 @@
-mod client;
-mod balancer;
-mod host_manager;
-mod balancing_algorithm;
 mod algorithms;
-mod poller;
+mod balancing_algorithm;
+mod client;
+mod hosts;
+mod load_balancer;
 
-pub use client::TcpClient;
-pub use balancer::LoadBalancer;
-pub use host_manager::HostManager;
-pub use balancing_algorithm::BalancingAlgorithm;
 pub use algorithms::RoundRobin;
-pub use poller::Poller;
+pub use balancing_algorithm::BalancingAlgorithm;
+pub use client::TcpClient;
+pub use hosts::load_hosts;
+pub use load_balancer::LoadBalancer;

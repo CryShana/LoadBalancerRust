@@ -1,12 +1,8 @@
 [package]
 name = "load-balancer-rust"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["CryShana <cryshana@cryshana.me>"]
-edition = "2018"
+edition = "2024"
 
 [dependencies]
-ctrlc = "3.1.9"
-mio = "0.8.0"
-
-[features]
-default = ["mio/os-poll", "mio/net"]
+mio = { version = "1.2.4", features = ["os-poll", "net"] }
